@@ -311,7 +311,18 @@ function S0({sc,setSc,mode,next}){
     {k:'event',zh:'威脅行為', en:'Threat Event',  desc:'威脅者可能採取什麼行動？',    opts:OPTS.events},
     {k:'loss', zh:'損失類型', en:'Loss Event',    desc:'可能造成什麼業務損失？',      opts:OPTS.losses},
   ];
-  const ok=fields.every(f=>sc[f.k]);
+  // Track which fields are in "custom" mode
+  const [customMode,setCustomMode]=useState({asset:false,actor:false,event:false,loss:false});
+  const handleSel=(k,v)=>{
+    if(v==='__custom__'){
+      setCustomMode(m=>({...m,[k]:true}));
+      setSc(s=>({...s,[k]:''}));
+    } else {
+      setCustomMode(m=>({...m,[k]:false}));
+      setSc(s=>({...s,[k]:v}));
+    }
+  };
+  const ok=fields.every(f=>sc[f.k]&&sc[f.k].trim());
   return(
     <div className="fade">
       <Hdr n={1} zh="場景定義" en="Scenario Definition"
@@ -330,12 +341,27 @@ function S0({sc,setSc,mode,next}){
               <span style={{fontSize:14.5,fontWeight:500}}>{zh}</span>
               {mode==='professional'&&<span style={{fontSize:11,color:C.fnt,marginLeft:8}}>{en}</span>}
             </div>
-            <select value={sc[k]||''} onChange={e=>setSc(s=>({...s,[k]:e.target.value}))}
+            <select
+              value={customMode[k]?'__custom__':(sc[k]||'')}
+              onChange={e=>handleSel(k,e.target.value)}
               style={{width:'100%',padding:'9px 12px',border:`1px solid ${C.bdr}`,borderRadius:5,
                 fontFamily:'inherit',fontSize:13,color:C.txt,background:C.surf,cursor:'pointer'}}>
               <option value="">— 請選擇 —</option>
               {opts.map(o=><option key={o} value={o}>{o}</option>)}
+              <option value="__custom__">✏ 自訂輸入…</option>
             </select>
+            {customMode[k]&&(
+              <input
+                autoFocus
+                type="text"
+                placeholder={`請輸入自訂${zh}…`}
+                value={sc[k]||''}
+                onChange={e=>setSc(s=>({...s,[k]:e.target.value}))}
+                style={{marginTop:8,width:'100%',padding:'8px 12px',
+                  border:`1.5px solid ${C.grn}`,borderRadius:5,
+                  fontFamily:'inherit',fontSize:13,color:C.txt,background:'#FAFFF5'}}
+              />
+            )}
           </div>
         ))}
       </div>
@@ -573,31 +599,72 @@ function S3({res,sc,params,mode,back}){
    FAIR TAXONOMY SIDEBAR REFERENCE
 ═══════════════════════════════════════════════════ */
 function TaxTree(){
-  const nodes=[
-    {l:'Risk',zh:'風險',d:0,dot:false},
-    {l:'LEF',zh:'損失事件頻率',d:1,dot:true,c:C.grn},
-    {l:'TEF',zh:'威脅事件頻率',d:2,dot:true,c:C.grnM},
-    {l:'CF', zh:'接觸頻率',     d:3,dot:true,c:'#A8B888'},
-    {l:'PoA',zh:'行動機率',     d:3,dot:true,c:'#A8B888'},
-    {l:'Vul',zh:'脆弱性',       d:2,dot:true,c:C.grnM},
-    {l:'TCap',zh:'威脅能力',    d:3,dot:true,c:'#A8B888'},
-    {l:'RS',  zh:'抵抗強度',    d:3,dot:true,c:'#A8B888'},
-    {l:'LM', zh:'損失規模',     d:1,dot:true,c:C.amb},
-    {l:'PL', zh:'主要損失',     d:2,dot:true,c:'#C89040'},
-    {l:'SL', zh:'次要損失',     d:2,dot:true,c:'#C89040'},
-    {l:'SLEF',zh:'次損失頻率', d:3,dot:true,c:'#D0A860'},
-    {l:'SLM', zh:'次損失規模', d:3,dot:true,c:'#D0A860'},
+  // Node definitions: id, label, zh, x, y, color
+  const N={
+    risk: {x:140,y:14, l:'Risk',  zh:'風險',    c:'#3A3A30'},
+    lef:  {x:72, y:56, l:'LEF',   zh:'損失事件頻率', c:C.grn},
+    lm:   {x:210,y:56, l:'LM',    zh:'損失規模', c:C.amb},
+    tef:  {x:36, y:100,l:'TEF',   zh:'威脅事件頻率',c:C.grnM},
+    vul:  {x:108,y:100,l:'Vul',   zh:'脆弱性',  c:C.grnM},
+    pl:   {x:183,y:100,l:'PL',    zh:'主要損失',c:'#C89040'},
+    sl:   {x:237,y:100,l:'SL',    zh:'次要損失',c:'#C89040'},
+    cf:   {x:18, y:146,l:'CF',    zh:'接觸頻率',c:'#8AAA68'},
+    poa:  {x:54, y:146,l:'PoA',   zh:'行動機率',c:'#8AAA68'},
+    tcap: {x:90, y:146,l:'TCap',  zh:'威脅能力',c:'#8AAA68'},
+    rs:   {x:126,y:146,l:'RS',    zh:'抵抗強度',c:'#8AAA68'},
+    slef: {x:220,y:146,l:'SLEF',  zh:'次損頻率',c:'#C8A050'},
+    slm:  {x:254,y:146,l:'SLM',   zh:'次損規模',c:'#C8A050'},
+  };
+  const edges=[
+    ['risk','lef'],['risk','lm'],
+    ['lef','tef'],['lef','vul'],
+    ['lm','pl'],['lm','sl'],
+    ['tef','cf'],['tef','poa'],
+    ['vul','tcap'],['vul','rs'],
+    ['sl','slef'],['sl','slm'],
+  ];
+  const ops=[
+    {x:140,y:36,t:'×'},
+    {x:72, y:78,t:'×'},
+    {x:210,y:78,t:'+'},
+    {x:173,y:122,t:'×'},
   ];
   return(
     <div style={{marginTop:22,paddingTop:16,borderTop:`1px solid ${C.bdr}`}}>
-      <div style={{fontSize:10,letterSpacing:'0.13em',color:C.fnt,textTransform:'uppercase',marginBottom:9}}>FAIR 架構</div>
-      {nodes.map(({l,zh,d,dot,c})=>(
-        <div key={l} style={{display:'flex',alignItems:'center',marginBottom:3,paddingLeft:d*9}}>
-          {dot&&<span style={{width:4,height:4,borderRadius:'50%',background:c||C.grn,marginRight:5,flexShrink:0}}></span>}
-          <span style={{fontSize:10,fontWeight:600,color:c||C.grn,minWidth:32,fontFamily:'monospace',letterSpacing:'0.03em'}}>{l}</span>
-          <span style={{fontSize:10,color:C.fnt}}>{zh}</span>
-        </div>
-      ))}
+      <div style={{fontSize:10,letterSpacing:'0.13em',color:C.fnt,textTransform:'uppercase',marginBottom:8}}>FAIR 架構</div>
+      <svg width="100%" viewBox="0 0 280 172" style={{overflow:'visible'}}>
+        {/* edges */}
+        {edges.map(([a,b])=>{
+          const A=N[a],B=N[b];
+          return <line key={a+b} x1={A.x} y1={A.y+8} x2={B.x} y2={B.y-8}
+            stroke={C.bdr} strokeWidth={1}/>;
+        })}
+        {/* operator badges */}
+        {ops.map(({x,y,t})=>(
+          <g key={x+y}>
+            <circle cx={x} cy={y} r={6} fill={C.bg} stroke={C.bdr} strokeWidth={0.8}/>
+            <text x={x} y={y+3} textAnchor="middle" fontSize={7} fill={C.sub} fontFamily="monospace">{t}</text>
+          </g>
+        ))}
+        {/* nodes */}
+        {Object.entries(N).map(([id,{x,y,l,zh,c}])=>{
+          const isLeaf=y>130;
+          return(
+            <g key={id}>
+              <circle cx={x} cy={y} r={isLeaf?6:8} fill={c} opacity={0.9}/>
+              <text x={x} y={isLeaf?y-9:y+18} textAnchor="middle"
+                fontSize={isLeaf?6:6.5} fontWeight="600" fill={c} fontFamily="monospace"
+                style={{letterSpacing:'0.02em'}}>{l}</text>
+              {!isLeaf&&<text x={x} y={y+26} textAnchor="middle"
+                fontSize={5} fill={C.fnt}>{zh}</text>}
+            </g>
+          );
+        })}
+      </svg>
+      <div style={{fontSize:9,color:C.fnt,marginTop:4,lineHeight:1.6}}>
+        <span style={{color:C.grn,fontWeight:600}}>■</span> 頻率分支 &nbsp;
+        <span style={{color:C.amb,fontWeight:600}}>■</span> 損失分支
+      </div>
     </div>
   );
 }
