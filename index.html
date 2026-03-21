@@ -200,7 +200,7 @@ const C={
 ═══════════════════════════════════════════════════ */
 const TERMS={
   cf:  {zh:'接觸頻率',        en:'Contact Frequency',          abbr:'CF',   unit:'次/年',  desc:'威脅者每年與目標資產發生接觸的預估次數'},
-  poa: {zh:'行動機率',        en:'Probability of Action',      abbr:'PoA',  unit:'0 – 1', desc:'每次接觸後，威脅者採取攻擊行動的機率'},
+  poa: {zh:'採取行動機率',    en:'Probability of Action',      abbr:'PoA',  unit:'0 – 1', desc:'每次接觸後，威脅者實際採取攻擊行動的機率'},
   tcap:{zh:'威脅能力',        en:'Threat Capability',          abbr:'TCap', unit:'1 – 10',desc:'威脅者克服防護措施的技術能力強度（越高越危險）'},
   rs:  {zh:'抵抗強度',        en:'Resistance Strength',        abbr:'RS',   unit:'1 – 10',desc:'現有控制措施阻擋威脅者的強度（越高保護越強）'},
   pl:  {zh:'主要損失',        en:'Primary Loss',               abbr:'PL',   unit:'USD',   desc:'損失事件直接造成的財務衝擊（不含次要損失）'},
@@ -309,7 +309,7 @@ function S0({sc,setSc,mode,next}){
     {k:'asset',zh:'資產',     en:'Asset',        desc:'分析對象：哪項資產面臨風險？',opts:OPTS.assets},
     {k:'actor',zh:'威脅來源', en:'Threat Actor',  desc:'誰可能造成威脅？',            opts:OPTS.actors},
     {k:'event',zh:'威脅行為', en:'Threat Event',  desc:'威脅者可能採取什麼行動？',    opts:OPTS.events},
-    {k:'loss', zh:'損失類型', en:'Loss Event',    desc:'可能造成什麼業務損失？',      opts:OPTS.losses},
+    {k:'loss', zh:'損失事件', en:'Loss Event',    desc:'可能造成什麼業務損失事件？（例：資料外洩、業務中斷）',      opts:OPTS.losses},
   ];
   // Track which fields are in "custom" mode
   const [customMode,setCustomMode]=useState({asset:false,actor:false,event:false,loss:false});
@@ -385,55 +385,168 @@ function S0({sc,setSc,mode,next}){
    STEP 1 — FAIR PARAMETER INPUT
 ═══════════════════════════════════════════════════ */
 function S1({params,upd,mode,back,next}){
+  const pm=(lo,ml,hi)=>(lo+4*ml+hi)/6;
+
+  /* Live intermediate estimates (PERT means) */
+  const cf_m  =pm(params.cf.lo,  params.cf.ml,  params.cf.hi);
+  const poa_m =Math.min(1,Math.max(0,pm(params.poa.lo, params.poa.ml, params.poa.hi)));
+  const tef_e =cf_m*poa_m;
+
+  const tc_m  =pm(params.tcap.lo,params.tcap.ml,params.tcap.hi);
+  const rs_m  =pm(params.rs.lo,  params.rs.ml,  params.rs.hi);
+
+  /* Quick 600-iteration MC for Vul% */
+  const vul_pct=useMemo(()=>{
+    let h=0;
+    for(let i=0;i<600;i++){
+      if(pertRv(params.tcap.lo,params.tcap.ml,params.tcap.hi)>
+         pertRv(params.rs.lo,  params.rs.ml,  params.rs.hi))h++;
+    }
+    return Math.round(h/600*100);
+  },[params.tcap,params.rs]);
+
+  const lef_e =tef_e*(vul_pct/100);
+  const pl_m  =pm(params.pl.lo,  params.pl.ml,  params.pl.hi);
+  const slef_m=Math.min(1,Math.max(0,pm(params.slef.lo,params.slef.ml,params.slef.hi)));
+  const slm_m =pm(params.slm.lo, params.slm.ml, params.slm.hi);
+  const lm_e  =pl_m+slef_m*slm_m;
+  const al_e  =lef_e*lm_e;
+
+  const vulState=tc_m>rs_m+0.8?'attacker':rs_m>tc_m+0.8?'defender':'balanced';
+
   return(
     <div className="fade">
       <Hdr n={2} zh="FAIR 參數輸入" en="Parameter Input"
-        desc="依 FAIR 架構輸入各因素的三點估計（最低、最可能、最高），以反映不確定性。不需要精確數值，合理的估計範圍即可。"/>
+        desc="依 FAIR 架構逐步輸入各因素的三點估計（最低 / 最可能 / 最高），系統即時顯示中間計算結果。"/>
       <div style={{background:'#EDE9E2',borderRadius:8,padding:'11px 16px',marginBottom:18,fontSize:12.5,color:C.sub,lineHeight:1.75}}>
         <strong style={{color:C.txt}}>FAIR 公式：</strong>
-        年度損失 = LEF × LM，其中 LEF = (CF × PoA) × P(TCap &gt; RS)，LM = PL + SLEF × SLM
+        年度損失 = <span style={{color:C.grn,fontWeight:600}}>LEF</span> × <span style={{color:C.amb,fontWeight:600}}>LM</span>
+        &nbsp;·&nbsp; LEF = (CF × PoA) × P(TCap &gt; RS)
+        &nbsp;·&nbsp; LM = PL + (SLEF × SLM)
       </div>
+
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:18}}>
-        {/* LEF Column */}
+
+        {/* ── LEF 頻率分支 ── */}
         <div>
           <div style={{fontSize:10.5,letterSpacing:'0.16em',color:C.grn,fontWeight:600,textTransform:'uppercase',marginBottom:11}}>
-            ← 損失事件頻率 (LEF)
+            損失事件頻率（Loss Event Frequency, LEF）
           </div>
-          <Card title="威脅事件頻率" en="Threat Event Frequency (TEF)">
+
+          {/* TEF */}
+          <Card title="威脅事件頻率（Threat Event Frequency, TEF）" en="">
             <div style={{fontSize:12,color:C.sub,background:'#F2EFE8',borderRadius:4,padding:'7px 10px',marginBottom:14,lineHeight:1.6}}>
-              TEF = CF × PoA：接觸頻率乘以每次接觸採取行動的機率
+              TEF = CF × PoA：每年接觸次數 × 每次接觸後採取行動的機率
             </div>
             <PRow k="cf"  val={params.cf}  onChange={upd} mode={mode}/>
             <PRow k="poa" val={params.poa} onChange={upd} mode={mode}/>
+            {/* TEF live result */}
+            <div style={{background:C.grnL,border:'1px solid #BDCFA0',borderRadius:6,padding:'10px 12px',marginTop:6}}>
+              <div style={{fontSize:10.5,color:C.sub,marginBottom:4}}>⟶ 即時估算 TEF（依最可能值）</div>
+              <div style={{fontSize:12,color:C.sub,marginBottom:3}}>
+                {cf_m.toFixed(1)} 次/年 × {(poa_m*100).toFixed(0)}%
+              </div>
+              <div style={{fontSize:15,fontWeight:500,color:C.grn}}>
+                TEF ≈ <strong>{tef_e.toFixed(2)}</strong> 次/年
+              </div>
+            </div>
           </Card>
-          <Card title="脆弱性" en="Vulnerability">
+
+          {/* Vulnerability */}
+          <Card title="脆弱性（Vulnerability, Vul）" en="">
             <div style={{fontSize:12,color:C.sub,background:'#F2EFE8',borderRadius:4,padding:'7px 10px',marginBottom:14,lineHeight:1.6}}>
-              每次迭代分別從 TCap 和 RS 分佈抽樣，若 TCap 樣本值 &gt; RS 樣本值，Vul = 1（損失事件發生）
+              脆弱性 = P(TCap &gt; RS)：每次模擬各自抽樣，若攻擊方能力超過防禦強度即視為脆弱。不直接輸入脆弱性數值。
             </div>
             <PRow k="tcap" val={params.tcap} onChange={upd} mode={mode}/>
             <PRow k="rs"   val={params.rs}   onChange={upd} mode={mode}/>
+            {/* TCap vs RS visual */}
+            <div style={{background:C.grnL,border:'1px solid #BDCFA0',borderRadius:6,padding:'10px 12px',marginTop:6}}>
+              <div style={{fontSize:10.5,color:C.sub,marginBottom:8}}>⟶ 攻防強度比較 · 即時脆弱性估算（600次抽樣）</div>
+              {/* Bar: TCap */}
+              <div style={{marginBottom:5}}>
+                <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:3}}>
+                  <span style={{fontSize:11,color:'#B04030',minWidth:42,fontWeight:500}}>TCap</span>
+                  <div style={{flex:1,background:C.bdr,borderRadius:3,height:9,position:'relative'}}>
+                    <div style={{width:`${Math.min(100,tc_m/10*100)}%`,background:'#C05040',height:9,borderRadius:3,transition:'width .3s'}}/>
+                  </div>
+                  <span style={{fontSize:11,color:'#B04030',minWidth:28,textAlign:'right'}}>{tc_m.toFixed(1)}</span>
+                </div>
+                {/* Bar: RS */}
+                <div style={{display:'flex',alignItems:'center',gap:6}}>
+                  <span style={{fontSize:11,color:C.grn,minWidth:42,fontWeight:500}}>RS</span>
+                  <div style={{flex:1,background:C.bdr,borderRadius:3,height:9}}>
+                    <div style={{width:`${Math.min(100,rs_m/10*100)}%`,background:C.grn,height:9,borderRadius:3,transition:'width .3s'}}/>
+                  </div>
+                  <span style={{fontSize:11,color:C.grn,minWidth:28,textAlign:'right'}}>{rs_m.toFixed(1)}</span>
+                </div>
+              </div>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:8,paddingTop:8,borderTop:`1px solid #BDCFA0`}}>
+                <div style={{fontSize:12,fontWeight:500,
+                  color:vulState==='attacker'?'#C05040':vulState==='defender'?C.grn:C.amb}}>
+                  {vulState==='attacker'?'⚠ 攻擊方較強':vulState==='defender'?'✓ 防禦方較強':'⚡ 攻防相當'}
+                </div>
+                <div style={{fontSize:14,fontWeight:500,color:C.grn}}>
+                  脆弱性 ≈ <strong>{vul_pct}%</strong>
+                </div>
+              </div>
+            </div>
+            {/* LEF summary */}
+            <div style={{background:'#D8E4C8',border:'1px solid #9EB880',borderRadius:6,padding:'8px 12px',marginTop:6}}>
+              <div style={{fontSize:10.5,color:C.sub,marginBottom:3}}>⟶ LEF 估算 = TEF × Vul</div>
+              <div style={{fontSize:13,color:C.grn,fontWeight:500}}>
+                {tef_e.toFixed(2)} × {vul_pct}% = <strong>{lef_e.toFixed(3)}</strong> 次/年
+              </div>
+            </div>
           </Card>
         </div>
-        {/* LM Column */}
+
+        {/* ── LM 損失規模分支 ── */}
         <div>
           <div style={{fontSize:10.5,letterSpacing:'0.16em',color:C.amb,fontWeight:600,textTransform:'uppercase',marginBottom:11}}>
-            → 損失規模 (LM)
+            損失規模（Loss Magnitude, LM）
           </div>
-          <Card title="主要損失" en="Primary Loss (PL)" accent={true}>
+
+          <Card title="主要損失（Primary Loss, PL）" en="" accent={true}>
             <div style={{fontSize:12,color:C.sub,background:'#F2EFE8',borderRadius:4,padding:'7px 10px',marginBottom:14,lineHeight:1.6}}>
-              損失事件直接造成的財務衝擊，例如數據復原、緊急回應費用
+              <strong>損失事件（Loss Event）</strong>直接造成的財務衝擊，例如數據復原、緊急回應費用。<br/>
+              此為損失規模（Loss Magnitude）的直接部分，與損失事件一對一發生。
             </div>
             <PRow k="pl" val={params.pl} onChange={upd} mode={mode}/>
           </Card>
-          <Card title="次要損失" en="Secondary Loss" accent={true}>
+
+          <Card title="次要損失（Secondary Loss）" en="" accent={true}>
             <div style={{fontSize:12,color:C.sub,background:'#F2EFE8',borderRadius:4,padding:'7px 10px',marginBottom:14,lineHeight:1.6}}>
-              次要損失 = SLEF × SLM，包含監管罰款、客戶賠償、法律費用等間接損失
+              次要損失規模 = SLEF × SLM，包含監管罰款、客戶賠償、法律費用等間接損失。<br/>
+              <strong>SLEF</strong> 為次要損失事件發生之機率（非頻率），不再額外乘以 LEF，避免重複計算。
             </div>
             <PRow k="slef" val={params.slef} onChange={upd} mode={mode}/>
             <PRow k="slm"  val={params.slm}  onChange={upd} mode={mode}/>
+            {/* LM live result */}
+            <div style={{background:C.ambL,border:'1px solid #DEC98A',borderRadius:6,padding:'10px 12px',marginTop:6}}>
+              <div style={{fontSize:10.5,color:C.sub,marginBottom:4}}>⟶ 損失規模（LM）估算 = PL + SLEF × SLM</div>
+              <div style={{fontSize:12,color:C.sub,marginBottom:3}}>
+                {usd(pl_m)} + {(slef_m*100).toFixed(0)}% × {usd(slm_m)}
+              </div>
+              <div style={{fontSize:15,fontWeight:500,color:C.amb}}>
+                LM ≈ <strong>{usd(lm_e)}</strong>
+              </div>
+            </div>
           </Card>
+
+          {/* Annual loss point estimate */}
+          <div style={{background:'#EDE9E2',border:`1px solid ${C.bdr}`,borderRadius:8,padding:'14px 16px',marginTop:4}}>
+            <div style={{fontSize:11,color:C.sub,marginBottom:5}}>📊 年度損失點估算（最可能值，供參考）</div>
+            <div style={{fontSize:11.5,color:C.sub,marginBottom:5}}>
+              LEF × LM = {lef_e.toFixed(3)} × {usd(lm_e)}
+            </div>
+            <div style={{fontSize:18,fontWeight:500,color:C.txt}}>≈ <strong>{usd(al_e)}</strong></div>
+            <div style={{fontSize:10,color:C.fnt,marginTop:4,lineHeight:1.6}}>
+              此為點估算，不含不確定性範圍。蒙地卡羅模擬將輸出完整機率分佈（含 P50、P90、P95）。
+            </div>
+          </div>
         </div>
       </div>
+
       <div style={{marginTop:20,display:'flex',justifyContent:'space-between'}}>
         <Btn ch="← 返回" onClick={back} v="ghost"/>
         <Btn ch="下一步：執行模擬 →" onClick={next}/>
@@ -491,32 +604,36 @@ function S3({res,sc,params,mode,back}){
   );
 
   const metrics=[
-    {zh:'預期年度損失',   en:'Expected Annual Loss', val:usd(res.mean),note:'均值 Mean',            hi:true},
+    {zh:'預期年度損失',   en:'Expected Annual Loss', val:usd(res.mean),note:'均值 Mean — 非最可能發生值',hi:true},
     {zh:'P50 中位數損失', en:'50th Percentile',       val:usd(res.p50), note:'50% 機率低於此值'},
     {zh:'P90 高風險損失', en:'90th Percentile',       val:usd(res.p90), note:'90% 機率低於此值'},
-    {zh:'P95 尾端風險',  en:'95th Percentile',       val:usd(res.p95), note:'5% 機率超過此值'},
+    {zh:'P95 尾端風險',  en:'95th Percentile',       val:usd(res.p95), note:'尾端風險 — 發生機率低但影響重大'},
   ];
   const interp=[
-    {zh:`預期年度損失（均值）約 ${usd(res.mean)}`,      en:`Expected annual loss is approximately ${usd(res.mean)}.`},
-    {zh:`損失事件發生率約 ${res.pLoss}%（非零損失情境）`, en:`Probability of non-zero loss: ${res.pLoss}%.`},
-    {zh:`90% 機率下，年度損失不超過 ${usd(res.p90)}`,   en:`There is a 90% probability that annual loss will not exceed ${usd(res.p90)}.`},
-    {zh:`極端情境（P99）損失估計可達 ${usd(res.p99)}`,  en:`In extreme scenarios (P99), loss could reach approximately ${usd(res.p99)}.`},
+    {zh:`預期年度損失（均值 Mean）約 ${usd(res.mean)}。此數值為所有模擬情境的平均，不代表最可能發生的損失金額。`,
+     en:`Expected annual loss (Mean) is approximately ${usd(res.mean)}. Note: this is the average across all simulations, not the most likely outcome.`},
+    {zh:`在 ${res.N.toLocaleString()} 次模擬中，約 ${res.pLoss}% 的情境產生非零損失（即損失事件實際發生）。`,
+     en:`In ${res.N.toLocaleString()} simulations, approximately ${res.pLoss}% of scenarios produced a non-zero loss.`},
+    {zh:`90% 機率下，年度損失不超過 ${usd(res.p90)}（P90 信心水準）。`,
+     en:`There is a 90% probability that annual loss will not exceed ${usd(res.p90)}.`},
+    {zh:`極端情境（P99）損失估計可達 ${usd(res.p99)}。此為尾端風險（Tail Risk），發生機率極低但影響重大，建議列入壓力測試情境。`,
+     en:`In extreme scenarios (P99), loss could reach approximately ${usd(res.p99)}. This represents Tail Risk — low probability but high impact.`},
   ];
 
   const paramSummary=[
-    {label:'接觸頻率 CF',    val:`${params.cf.lo}–${params.cf.hi} 次/年`},
-    {label:'行動機率 PoA',   val:`${params.poa.lo}–${params.poa.hi}`},
-    {label:'威脅能力 TCap',  val:`${params.tcap.lo}–${params.tcap.hi} / 10`},
-    {label:'抵抗強度 RS',    val:`${params.rs.lo}–${params.rs.hi} / 10`},
-    {label:'主要損失 PL',    val:`${usd(params.pl.lo)}–${usd(params.pl.hi)}`},
-    {label:'次要損失頻率 SLEF',val:`${params.slef.lo}–${params.slef.hi}`},
-    {label:'次要損失規模 SLM',val:`${usd(params.slm.lo)}–${usd(params.slm.hi)}`},
+    {label:'接觸頻率（CF）',         val:`${params.cf.lo}–${params.cf.hi} 次/年`},
+    {label:'採取行動機率（PoA）',     val:`${params.poa.lo}–${params.poa.hi}`},
+    {label:'威脅能力（TCap）',        val:`${params.tcap.lo}–${params.tcap.hi} / 10`},
+    {label:'抵抗強度（RS）',          val:`${params.rs.lo}–${params.rs.hi} / 10`},
+    {label:'主要損失（PL）',          val:`${usd(params.pl.lo)}–${usd(params.pl.hi)}`},
+    {label:'次要損失事件頻率（SLEF）', val:`${params.slef.lo}–${params.slef.hi}`},
+    {label:'次要損失規模（SLM）',     val:`${usd(params.slm.lo)}–${usd(params.slm.hi)}`},
   ];
 
   return(
     <div className="fade print-page">
       <Hdr n={4} zh="分析結果" en="Risk Quantification Results"
-        desc={`基於 ${res.N.toLocaleString()} 次蒙地卡羅模擬的年度損失機率分佈。損失發生機率：${res.pLoss}%`}/>
+        desc={`基於 ${res.N.toLocaleString()} 次蒙地卡羅模擬的年度損失機率分佈。在所有情境中，約 ${res.pLoss}% 產生非零損失。`}/>
 
       {/* Metric Cards */}
       <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:11,marginBottom:20}}>
@@ -567,7 +684,7 @@ function S3({res,sc,params,mode,back}){
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14,marginBottom:16}}>
         <div style={{background:C.surf,border:`1px solid ${C.bdr}`,borderRadius:8,padding:16}}>
           <div style={{fontSize:12.5,fontWeight:500,marginBottom:10}}>場景資訊 Scenario Details</div>
-          {[['資產 Asset',sc.asset],['威脅來源 Threat Actor',sc.actor],['威脅行為 Threat Event',sc.event],['損失類型 Loss Event',sc.loss]].map(([l,v])=>(
+          {[['資產 Asset',sc.asset],['威脅來源 Threat Actor',sc.actor],['威脅行為 Threat Event',sc.event],['損失事件 Loss Event',sc.loss]].map(([l,v])=>(
             <div key={l} style={{padding:'7px 0',borderBottom:`1px solid ${C.bdr}`}}>
               <div style={{fontSize:10.5,color:C.sub,marginBottom:2}}>{l}</div>
               <div style={{fontSize:12.5}}>{v}</div>
