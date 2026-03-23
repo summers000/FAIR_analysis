@@ -505,30 +505,47 @@ function FairDiagram({nodes,setNodes}){
 
   const pm=(lo,ml,hi)=>(lo+4*ml+hi)/6;
 
-  /* ── SVG layout ── */
-  const VW=760,VH=420;
+  /* ── SVG layout: box nodes, cx/cy = center, w/h = box size ── */
+  /* ── Canvas: wider + taller to fit full English names ── */
+  const VW=980,VH=500;
+  /*
+   * NP: [cx, cy, halfW, halfH]
+   * Layout rows:
+   *   y= 50  → Risk
+   *   y=150  → LEF, LM
+   *   y=262  → TEF, Vul, PL, SL
+   *   y=390  → CF, PoA, TCap, RS,  SLEF, SLM
+   */
   const NP={
-    risk:[380,58,30],lef:[178,156,24],lm:[562,156,24],
-    tef:[88,260,20],vul:[262,260,20],pl:[460,260,20],sl:[648,260,20],
-    cf:[36,364,16],poa:[136,364,16],tcap:[220,364,16],rs:[304,364,16],
-    slef:[596,364,16],slm:[698,364,16],
+    risk:[490, 50, 65, 22],
+    lef: [215,150,100, 26],  lm:  [726,150, 90, 26],
+    tef: [103,262, 88, 26],  vul: [330,262, 76, 26],
+    pl:  [576,262, 74, 26],  sl:  [840,262, 84, 26],
+    cf:  [ 48,390, 66, 22],  poa: [184,390, 84, 22],
+    tcap:[292,390, 74, 22],  rs:  [420,390, 72, 22],
+    slef:[748,390, 86, 22],  slm: [912,390, 68, 22],
+  };
+  const elbowPath=(a,b)=>{
+    const[ax,ay,,ah]=NP[a],[bx,by,,bh]=NP[b];
+    const mid=(ay+ah+by-bh)/2;
+    return `M${ax},${ay+ah} L${ax},${mid} L${bx},${mid} L${bx},${by-bh}`;
   };
 
-  /* Node metadata */
+  /* Node metadata — en1/en2 for two-line label, zh always #111110 */
   const NM={
-    risk:{zh:'風險',       abbr:'Risk', clr:'#2A2820'},
-    lef: {zh:'損失事件頻率', abbr:'LEF',  clr:'#2C5018'},
-    lm:  {zh:'損失規模',    abbr:'LM',   clr:'#A84810'},
-    tef: {zh:'威脅事件頻率', abbr:'TEF',  clr:'#3A6020'},
-    vul: {zh:'脆弱性',      abbr:'Vul',  clr:'#3A6020'},
-    pl:  {zh:'主要損失',    abbr:'PL',   clr:'#B65018'},
-    sl:  {zh:'次要損失',    abbr:'SL',   clr:'#B65018'},
-    cf:  {zh:'接觸頻率',    abbr:'CF',   clr:'#4E7828'},
-    poa: {zh:'採取行動機率', abbr:'PoA',  clr:'#4E7828'},
-    tcap:{zh:'威脅能力',    abbr:'TCap', clr:'#4E7828'},
-    rs:  {zh:'抵抗強度',    abbr:'RS',   clr:'#4E7828'},
-    slef:{zh:'次損頻率',    abbr:'SLEF', clr:'#C47828'},
-    slm: {zh:'次損規模',    abbr:'SLM',  clr:'#C47828'},
+    risk:{zh:'風險',       en1:'Risk',               en2:'',                  abbr:'Risk', clr:'#2A2820'},
+    lef: {zh:'損失事件頻率', en1:'Loss Event',          en2:'Frequency',         abbr:'LEF',  clr:'#2C5018'},
+    lm:  {zh:'損失規模',    en1:'Loss',                en2:'Magnitude',         abbr:'LM',   clr:'#A84810'},
+    tef: {zh:'威脅事件頻率', en1:'Threat Event',        en2:'Frequency',         abbr:'TEF',  clr:'#3A6020'},
+    vul: {zh:'脆弱性',      en1:'Vulnerability',       en2:'',                  abbr:'Vul',  clr:'#3A6020'},
+    pl:  {zh:'主要損失',    en1:'Primary Loss',         en2:'',                  abbr:'PL',   clr:'#B65018'},
+    sl:  {zh:'次要損失',    en1:'Secondary',            en2:'Loss',              abbr:'SL',   clr:'#B65018'},
+    cf:  {zh:'接觸頻率',    en1:'Contact',              en2:'Frequency',         abbr:'CF',   clr:'#4E7828'},
+    poa: {zh:'採取行動機率', en1:'Probability',          en2:'of Action',         abbr:'PoA',  clr:'#4E7828'},
+    tcap:{zh:'威脅能力',    en1:'Threat',               en2:'Capability',        abbr:'TCap', clr:'#4E7828'},
+    rs:  {zh:'抵抗強度',    en1:'Resistance',           en2:'Strength',          abbr:'RS',   clr:'#4E7828'},
+    slef:{zh:'次要損失頻率', en1:'Sec. Loss Event',      en2:'Frequency',         abbr:'SLEF', clr:'#C47828'},
+    slm: {zh:'次要損失規模', en1:'Sec. Loss',             en2:'Magnitude',         abbr:'SLM',  clr:'#C47828'},
   };
 
   /* Display value per node */
@@ -562,13 +579,13 @@ function FairDiagram({nodes,setNodes}){
     if(active===id){setActive(null);return;}
     const el=svgRef.current;if(!el)return;
     const r=el.getBoundingClientRect();
-    const[nx,ny,nr]=NP[id];
+    const[nx,ny,hw,hh]=NP[id];
     const sx=r.width/VW,sy=r.height/VH;
     const PW=268;
     let px=(nx-PW/2)*sx;
-    let py=(ny+nr+10)*sy;
+    let py=(ny+hh+12)*sy;
     px=Math.max(4,Math.min(px,r.width-PW-4));
-    if(py+260>r.height)py=Math.max(4,(ny-nr-270)*sy);
+    if(py+260>r.height)py=Math.max(4,(ny-hh-272)*sy);
     setPanelPos({left:px,top:py});
     setActive(id);
   };
@@ -639,94 +656,119 @@ function FairDiagram({nodes,setNodes}){
           <rect width={VW} height={VH} fill="url(#fpg2)"/>
           <rect width={VW} height={VH} fill="url(#fbg1b)"/>
           <rect width={VW} height={VH} fill="url(#fbg2b)"/>
-          {[48,72,98].map((r,i)=>(
-            <circle key={r} cx={380} cy={58} r={r} fill="none" stroke="#D4D0C8"
-              strokeWidth="0.5" strokeDasharray={i===0?"4 6":"2 10"} opacity="0.45"/>
+          {[58,86,116].map((r,i)=>(
+            <circle key={r} cx={490} cy={50} r={r} fill="none" stroke="#D4D0C8"
+              strokeWidth="0.5" strokeDasharray={i===0?"4 6":"2 10"} opacity="0.4"/>
           ))}
-          <line x1={380} y1={92} x2={380} y2={412}
-            stroke="#CCCAC0" strokeWidth="0.5" strokeDasharray="3 8" opacity="0.4"/>
-          <text x={182} y={128} textAnchor="middle" fontSize="7" fill="#2C5018"
-            fontWeight="700" letterSpacing="0.14em" fontFamily="monospace" opacity="0.6">FREQUENCY</text>
-          <text x={562} y={128} textAnchor="middle" fontSize="7" fill="#A84810"
-            fontWeight="700" letterSpacing="0.14em" fontFamily="monospace" opacity="0.6">LOSS</text>
+          <line x1={490} y1={74} x2={490} y2={492}
+            stroke="#CCCAC0" strokeWidth="0.5" strokeDasharray="3 8" opacity="0.38"/>
+          <text x={220} y={118} textAnchor="middle" fontSize="7" fill="#2C5018"
+            fontWeight="700" letterSpacing="0.14em" fontFamily="monospace" opacity="0.65">FREQUENCY</text>
+          <text x={726} y={118} textAnchor="middle" fontSize="7" fill="#A84810"
+            fontWeight="700" letterSpacing="0.14em" fontFamily="monospace" opacity="0.65">LOSS</text>
 
-          {/* Edges — gray out when parent is in direct mode */}
+          {/* Orthogonal elbow edges */}
           {EDGES.map(([a,b])=>{
-            const [ax,ay,ar]=NP[a],[bx,by,br]=NP[b];
             const ef=nodeEffective(b,nodes);
             const grn=GRN.has(b)||(a==='risk'&&b==='lef');
             const dimmed=ef==='info';
-            return <line key={a+b} x1={ax} y1={ay+ar} x2={bx} y2={by-br}
-              stroke={dimmed?'rgba(180,176,170,0.25)'
-                :grn?'rgba(55,90,35,0.2)':'rgba(155,68,14,0.2)'}
+            return <path key={a+b} d={elbowPath(a,b)} fill="none"
+              stroke={dimmed?'rgba(180,176,170,0.3)'
+                :grn?'rgba(44,80,24,0.4)':'rgba(168,72,16,0.4)'}
               strokeWidth={dimmed?1:1.5}
-              strokeDasharray={dimmed?"4 4":"none"}/>;
+              strokeDasharray={dimmed?"5 4":"none"}/>;
           })}
 
-          {/* Vul bar (only when both lef and vul are derived) */}
+          {/* Vul comparison bar — between Vul node bottom and TCap/RS top */}
           {nodes.lef.mode==='derived'&&nodes.vul.mode==='derived'&&(
             <g>
-              <rect x={200} y={304} width={120} height={6} rx={3} fill="#E8E4DC" stroke="#D0CCC4" strokeWidth="0.5"/>
-              <rect x={201} y={305} width={Math.min(118,v.tc_m/10*118)} height={4} rx={2} fill="rgba(175,48,30,0.55)"/>
-              <rect x={201} y={305} width={Math.min(118,v.rs_m/10*118)} height={4} rx={2} fill="rgba(48,84,26,0.5)"/>
-              <text x={260} y={320} textAnchor="middle" fontSize="7" fill="#686460" fontFamily="monospace">
+              <rect x={272} y={298} width={116} height={6} rx={3}
+                fill="#E8E4DC" stroke="#D0CCC4" strokeWidth="0.5"/>
+              <rect x={273} y={299}
+                width={Math.min(114,v.tc_m/10*114)} height={4} rx={2}
+                fill="rgba(175,48,30,0.55)"/>
+              <rect x={273} y={299}
+                width={Math.min(114,v.rs_m/10*114)} height={4} rx={2}
+                fill="rgba(48,84,26,0.5)"/>
+              <text x={330} y={316} textAnchor="middle" fontSize="7"
+                fill="#686460" fontFamily="monospace">
                 {`Vul≈${vul_pct}% ${vulSt==='attacker'?'⚠攻>守':vulSt==='defender'?'✓守>攻':'⚡均衡'}`}
               </text>
             </g>
           )}
 
-          {/* Nodes */}
+          {/* Rectangular box nodes — two-line English label */}
           {Object.entries(NM).map(([id,nm])=>{
-            const[nx,ny,nr]=NP[id];
+            const[nx,ny,hw,hh]=NP[id];
             const isAct=active===id;
             const ef=nodeEffective(id,nodes);
             const isDirect=ef==='direct'||(nodes[id]&&nodes[id].mode==='direct'&&ef!=='info');
             const isInfo=ef==='info';
             const isSw=SWITCHABLE.has(id);
             const clk=id!=='risk'&&id!=='sl';
-            /* color */
             const clr=isInfo?'#C8C4BC':nm.clr;
+            const hasTwoLines=nm.en2&&nm.en2!=='';
+            /* vertical text layout inside box */
+            const zhY=ny+hh-5;
+            const en1Y=hasTwoLines?ny-5:ny+3;
+            const en2Y=ny+6;
+            const enFs=nm.en1.length>14?6.5:7;
             return(
               <g key={id} onClick={e=>clk&&doClick(id,e)}
                 style={{cursor:clk?'pointer':'default'}}>
-                {/* active ring */}
-                {isAct&&<circle cx={nx} cy={ny} r={nr+7}
-                  fill={clr} fillOpacity="0.12"
-                  stroke={clr} strokeOpacity="0.4" strokeWidth="1.2"/>}
-                {/* mode indicator ring for switchable nodes */}
-                {isSw&&!isAct&&!isInfo&&<circle cx={nx} cy={ny} r={nr+5}
-                  fill={clr} fillOpacity={isDirect?0.06:0.04}
-                  stroke={clr} strokeOpacity="0.25"
-                  strokeWidth="0.8" strokeDasharray={isDirect?"none":"3 4"}/>}
-                {/* Node body */}
-                <circle cx={nx} cy={ny} r={nr}
-                  fill={isDirect?clr:'white'}
-                  stroke={clr} strokeWidth={isDirect?0:1.4}
-                  opacity={isInfo?0.45:isDirect?1:0.9}/>
-                {/* Abbr */}
-                <text x={nx} y={ny+(nr>26?3:2.5)} textAnchor="middle"
-                  fontSize={nr>26?9.5:nr>18?8:7.5}
-                  fontWeight="700" fontFamily="monospace"
-                  fill={isDirect&&!isInfo?'white':(isInfo?'#C8C4BC':nm.clr)}>{nm.abbr}</text>
-                {/* Value */}
-                <text x={nx} y={ny+nr+11} textAnchor="middle"
-                  fontSize="7.5" fill={isInfo?'#C8C4BC':nm.clr} fontWeight="500"
-                  opacity={isInfo?0.6:1}>{NVALS[id]}</text>
-                {/* Label */}
-                <text x={nx} y={ny+nr+19} textAnchor="middle"
-                  fontSize="6" fill={isInfo?'#BEBAB0':'#9A9690'}>{nm.zh}</text>
-                {/* D badge for direct switchable nodes */}
+                {/* Active highlight */}
+                {isAct&&<rect x={nx-hw-4} y={ny-hh-4}
+                  width={(hw+4)*2} height={(hh+4)*2} rx={6}
+                  fill={clr} fillOpacity="0.1"
+                  stroke={clr} strokeOpacity="0.45" strokeWidth="1.5"/>}
+                {/* Derived switchable dashed outline */}
+                {isSw&&!isDirect&&!isInfo&&!isAct&&<rect x={nx-hw} y={ny-hh}
+                  width={hw*2} height={hh*2} rx={4} fill="none"
+                  stroke={clr} strokeWidth="1.2"
+                  strokeDasharray="4 3" opacity="0.5"/>}
+                {/* Box */}
+                <rect x={nx-hw} y={ny-hh} width={hw*2} height={hh*2} rx={4}
+                  fill={isDirect&&!isInfo?clr:'white'}
+                  stroke={isInfo?'#D0CCC4':clr}
+                  strokeWidth={isInfo?0.8:1.5}
+                  opacity={isInfo?0.55:1}/>
+                {/* English line 1 */}
+                <text x={nx} y={en1Y} textAnchor="middle"
+                  fontSize={enFs} fontWeight="700"
+                  fontFamily="Inter,sans-serif"
+                  fill={isDirect&&!isInfo?'white':(isInfo?'#C0BCB6':clr)}
+                  opacity={isInfo?0.65:1}>{nm.en1}</text>
+                {/* English line 2 (if exists) */}
+                {hasTwoLines&&(
+                  <text x={nx} y={en2Y} textAnchor="middle"
+                    fontSize={enFs} fontWeight="700"
+                    fontFamily="Inter,sans-serif"
+                    fill={isDirect&&!isInfo?'white':(isInfo?'#C0BCB6':clr)}
+                    opacity={isInfo?0.65:1}>{nm.en2}</text>
+                )}
+                {/* Chinese name — always #111110 */}
+                <text x={nx} y={zhY} textAnchor="middle"
+                  fontSize="5.5" fontFamily="Noto Serif TC,sans-serif"
+                  fill={isInfo?'#A8A49A':'#111110'}
+                  opacity={isInfo?0.55:1}>{nm.zh}</text>
+                {/* Computed value below box */}
+                <text x={nx} y={ny+hh+12} textAnchor="middle"
+                  fontSize="8" fontWeight="500"
+                  fill={isInfo?'#C8C4BC':clr}
+                  opacity={isInfo?0.5:1}>{NVALS[id]}</text>
+                {/* D badge for direct-mode switchable */}
                 {isSw&&isDirect&&!isInfo&&(
                   <g>
-                    <circle cx={nx+nr} cy={ny-nr} r={5.5} fill={clr} stroke="white" strokeWidth="1"/>
-                    <text x={nx+nr} y={ny-nr+2.5} textAnchor="middle"
-                      fontSize="6" fill="white" fontWeight="700">D</text>
+                    <circle cx={nx+hw-1} cy={ny-hh+1} r={5.5}
+                      fill={clr} stroke="white" strokeWidth="1"/>
+                    <text x={nx+hw-1} y={ny-hh+3.8} textAnchor="middle"
+                      fontSize="5.5" fill="white" fontWeight="700">D</text>
                   </g>
                 )}
-                {/* edit dot for leaf direct nodes */}
+                {/* Edit dot for leaf direct nodes */}
                 {!isSw&&isDirect&&!isInfo&&!isAct&&(
-                  <circle cx={nx+nr-1} cy={ny-nr+1} r={2.5}
-                    fill="white" fillOpacity="0.88"/>
+                  <circle cx={nx+hw-2} cy={ny-hh+2} r={2.5}
+                    fill="white" fillOpacity="0.9"/>
                 )}
               </g>
             );
@@ -747,7 +789,7 @@ function FairDiagram({nodes,setNodes}){
               <div>
                 <div style={{fontSize:12.5,fontWeight:600,color:an.clr}}>{an.zh}</div>
                 <div style={{fontSize:9,color:C.fnt,marginTop:1,fontFamily:'Inter,sans-serif'}}>
-                  {an.abbr} · {eff==='info'?'資訊參考':'可輸入'}
+                  {an.en1}{an.en2?' '+an.en2:''} · {eff==='info'?'資訊參考':'可輸入'}
                 </div>
               </div>
               <button onClick={()=>setActive(null)} style={{
@@ -1329,12 +1371,13 @@ function TabFair({risk,onUpdate}){
     }
     return n;
   });
+  const[simCount,setSimCount]=useState(10000);
   const[simming,setSimming]=useState(false);
   const runSim=()=>{
     setSimming(true);
     setTimeout(()=>{
       try{
-        const result=runMC(nodes,10000);
+        const result=runMC(nodes,simCount);
         const newStatus=risk.status==='registered'?'analyzed':risk.status;
         onUpdate({...risk,fairNodes:nodes,fairResult:result,
           status:newStatus,updatedAt:today()});
@@ -1346,74 +1389,260 @@ function TabFair({risk,onUpdate}){
   return(
     <div>
       <FairDiagram nodes={nodes} setNodes={setNodes}/>
-      <div style={{margin:'12px 0',display:'flex',justifyContent:'flex-end',gap:10,alignItems:'center'}}>
+      <div style={{margin:'12px 0',display:'flex',justifyContent:'flex-end',
+        gap:10,alignItems:'center',flexWrap:'wrap'}}>
         {risk.fairResult&&(
           <span style={{fontSize:11.5,color:C.sub,fontFamily:'Inter,sans-serif'}}>
             上次模擬：{fmtDate(risk.updatedAt)}
+            {risk.fairResult.N&&(
+              <span style={{marginLeft:6,padding:'1px 7px',background:'#F0EDE8',
+                borderRadius:2,fontSize:10,color:C.fnt}}>N={risk.fairResult.N.toLocaleString()}</span>
+            )}
           </span>
         )}
-        <Btn ch={simming?'模擬執行中…':risk.fairResult?'重新執行模擬':'▶ 執行蒙地卡羅模擬（N=10,000）'}
+        <div style={{display:'flex',alignItems:'center',gap:6}}>
+          <span style={{fontSize:11.5,color:C.sub,fontFamily:'Inter,sans-serif',flexShrink:0}}>
+            模擬次數
+          </span>
+          {[10000,50000,100000].map(n=>(
+            <button key={n} onClick={()=>setSimCount(n)} style={{
+              padding:'5px 10px',borderRadius:3,fontSize:11.5,cursor:'pointer',
+              fontFamily:'Inter,sans-serif',fontWeight:500,transition:'all .12s',
+              border:`1.5px solid ${simCount===n?C.txt:C.bdr}`,
+              background:simCount===n?C.txt:'transparent',
+              color:simCount===n?'white':C.sub}}>
+              {n===10000?'10K':n===50000?'50K':'100K'}
+            </button>
+          ))}
+        </div>
+        <Btn ch={simming?'模擬執行中…':risk.fairResult?'重新執行模擬':'▶ 執行模擬'}
           onClick={runSim} disabled={simming}
           style={{padding:'9px 24px',fontSize:13}}/>
       </div>
       {risk.fairResult&&(
         <div className="fade">
-          <SectionLabel>量化結果</SectionLabel>
-          <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:10,marginBottom:14}}>
+
+          {/* ── 1. Scenario Summary ── */}
+          <div style={{background:'#F6F4EF',border:`1px solid ${C.bdr}`,
+            borderRadius:4,padding:'14px 18px',marginBottom:16,
+            borderLeft:`3px solid ${C.red}`}}>
+            <div style={{fontSize:10,fontWeight:600,color:C.red,letterSpacing:'0.12em',
+              textTransform:'uppercase',marginBottom:8,fontFamily:'Inter,sans-serif'}}>
+              情境摘要 · Scenario Summary
+            </div>
+            <p style={{fontSize:13.5,color:C.txt,lineHeight:1.85,fontFamily:'Inter,sans-serif'}}>
+              <strong>{risk.scenario.actor||'—'}</strong>
+              <span style={{color:C.sub}}> 對 </span>
+              <strong>「{risk.scenario.asset||'—'}」</strong>
+              <span style={{color:C.sub}}> 發動 </span>
+              <strong>{risk.scenario.event||'—'}</strong>
+              <span style={{color:C.sub}}> 行為，可能造成 </span>
+              <strong>{risk.scenario.loss||'—'}</strong>。
+            </p>
+            {risk.scenario.assumptions&&(
+              <p style={{fontSize:11.5,color:C.sub,marginTop:6,fontStyle:'italic',
+                fontFamily:'Inter,sans-serif'}}>
+                假設條件：{risk.scenario.assumptions}
+              </p>
+            )}
+          </div>
+
+          {/* ── 2. KPI Cards ── */}
+          <SectionLabel>量化結果 · Quantitative Results</SectionLabel>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:10,marginBottom:6}}>
             {[
-              {label:'預期年度損失 (EAL)',val:usd(risk.fairResult.mean),note:'均值，非最可能值',hi:true},
-              {label:'P50 中位數',val:usd(risk.fairResult.p50),note:'50% 情境低於此值'},
-              {label:'P90',val:usd(risk.fairResult.p90),note:'90% 情境低於此值'},
-              {label:'P95',val:usd(risk.fairResult.p95),note:'尾端風險'},
+              {
+                zh:'預期年度損失',en:'Expected Annual Loss',abbr:'EAL',
+                val:usd(risk.fairResult.mean),
+                note:'均值（Mean），代表長期平均的年度暴露水準',
+                warn:'此值不代表最可能發生的損失金額',hi:true
+              },
+              {
+                zh:'P50 中位數',en:'50th Percentile',abbr:'P50',
+                val:usd(risk.fairResult.p50),
+                note:'50% 的情境低於此值',warn:null
+              },
+              {
+                zh:'P90 高風險門檻',en:'90th Percentile',abbr:'P90',
+                val:usd(risk.fairResult.p90),
+                note:'90% 情境下年度損失不超過此值',warn:null
+              },
+              {
+                zh:'P95 尾端風險',en:'95th Percentile',abbr:'P95',
+                val:usd(risk.fairResult.p95),
+                note:'用於觀察高損失但較低機率的情境',warn:null
+              },
             ].map((m,i)=>(
               <div key={i} style={{background:i===0?C.txt:C.surf,
-                border:`1px solid ${i===0?C.txt:C.bdr}`,borderRadius:4,padding:'12px 14px'}}>
-                <div style={{fontSize:10.5,color:i===0?'rgba(255,255,255,.6)':C.fnt,
-                  marginBottom:4,fontFamily:'Inter,sans-serif'}}>{m.label}</div>
-                <div style={{fontSize:19,fontWeight:600,color:i===0?'white':C.txt,
-                  letterSpacing:'-0.02em',fontFamily:'Inter,sans-serif'}}>{m.val}</div>
-                <div style={{fontSize:10,color:i===0?'rgba(255,255,255,.45)':C.sub,
-                  marginTop:3,fontFamily:'Inter,sans-serif'}}>{m.note}</div>
+                border:`1px solid ${i===0?C.txt:C.bdr}`,borderRadius:4,
+                padding:'14px 14px'}}>
+                <div style={{fontSize:10,color:i===0?'rgba(255,255,255,.55)':C.fnt,
+                  marginBottom:2,fontFamily:'Inter,sans-serif',letterSpacing:'0.04em',
+                  textTransform:'uppercase'}}>{m.abbr}</div>
+                <div style={{fontSize:11,color:i===0?'rgba(255,255,255,.7)':C.sub,
+                  marginBottom:6,fontFamily:'Inter,sans-serif',lineHeight:1.3}}>
+                  {m.zh}
+                  {i===0&&<span style={{display:'block',fontSize:9.5,opacity:0.7}}>{m.en}</span>}
+                </div>
+                <div style={{fontSize:22,fontWeight:700,color:i===0?'white':C.txt,
+                  letterSpacing:'-0.02em',fontFamily:'Inter,sans-serif',
+                  marginBottom:6,lineHeight:1}}>{m.val}</div>
+                <div style={{fontSize:10.5,color:i===0?'rgba(255,255,255,.6)':C.sub,
+                  fontFamily:'Inter,sans-serif',lineHeight:1.5}}>{m.note}</div>
+                {m.warn&&(
+                  <div style={{marginTop:5,fontSize:9.5,
+                    color:i===0?'rgba(255,220,100,.85)':'#9E6818',
+                    fontFamily:'Inter,sans-serif',fontStyle:'italic'}}>
+                    ⚠ {m.warn}
+                  </div>
+                )}
               </div>
             ))}
           </div>
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}}>
-            <div style={{background:C.surf,border:`1px solid ${C.bdr}`,borderRadius:4,padding:12}}>
-              <div style={{fontSize:11,fontWeight:600,color:C.sub,marginBottom:8,fontFamily:'Inter,sans-serif'}}>
-                損失分佈直方圖
+
+          {/* ── 3. Distribution interpretation ── */}
+          <div style={{background:'#F0EDE8',border:`1px solid ${C.bdr}`,
+            borderRadius:4,padding:'12px 16px',marginBottom:14}}>
+            <div style={{fontSize:10,fontWeight:600,color:C.sub,letterSpacing:'0.1em',
+              textTransform:'uppercase',marginBottom:6,fontFamily:'Inter,sans-serif'}}>
+              分佈特性說明
+            </div>
+            <p style={{fontSize:12.5,color:C.txt,lineHeight:1.8,fontFamily:'Inter,sans-serif'}}>
+              此風險呈現<strong>右偏長尾分佈（Right-skewed / Long-tail Distribution）</strong>，
+              多數情境的損失相對較低，但少數情境可能造成顯著較大的損失。
+              因此，平均值（EAL = {usd(risk.fairResult.mean)}）可能明顯高於中位數（P50 = {usd(risk.fairResult.p50)}），
+              這是 FAIR 量化分析的正常特性，代表極端情境的損失對均值影響較大。
+            </p>
+          </div>
+
+          {/* ── 4 & 5. Charts ── */}
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:14}}>
+            <div style={{background:C.surf,border:`1px solid ${C.bdr}`,borderRadius:4,padding:14}}>
+              <div style={{fontSize:12,fontWeight:600,color:C.txt,marginBottom:2,
+                fontFamily:'Inter,sans-serif'}}>損失分佈直方圖</div>
+              <div style={{fontSize:10.5,color:C.sub,marginBottom:3,
+                fontFamily:'Inter,sans-serif'}}>Loss Distribution Histogram</div>
+              <div style={{fontSize:10,color:C.fnt,marginBottom:8,
+                fontFamily:'Inter,sans-serif'}}>
+                X 軸：年度損失金額 · Y 軸：模擬次數（僅顯示非零損失情境）
               </div>
               <MiniHistogram data={hist} mean={risk.fairResult.mean}/>
-              <div style={{fontSize:10,color:C.sub,marginTop:5,display:'flex',gap:6,alignItems:'center',fontFamily:'Inter,sans-serif'}}>
-                <span style={{display:'inline-block',width:14,borderTop:`1.5px dashed ${C.red}`}}/>均值 {usd(risk.fairResult.mean)}
+              <div style={{fontSize:10,color:C.sub,marginTop:6,
+                display:'flex',gap:6,alignItems:'center',fontFamily:'Inter,sans-serif'}}>
+                <span style={{display:'inline-block',width:14,
+                  borderTop:`1.5px dashed ${C.red}`}}/>
+                平均值（Mean / EAL）= {usd(risk.fairResult.mean)}
+              </div>
+              <div style={{fontSize:10,color:C.fnt,marginTop:4,lineHeight:1.6,
+                fontFamily:'Inter,sans-serif'}}>
+                此圖顯示不同年度損失區間出現的頻率，可觀察最常見的損失範圍與分佈形狀。
               </div>
             </div>
-            <div style={{background:C.surf,border:`1px solid ${C.bdr}`,borderRadius:4,padding:12}}>
-              <div style={{fontSize:11,fontWeight:600,color:C.sub,marginBottom:8,fontFamily:'Inter,sans-serif'}}>
-                損失超越機率曲線
+            <div style={{background:C.surf,border:`1px solid ${C.bdr}`,borderRadius:4,padding:14}}>
+              <div style={{fontSize:12,fontWeight:600,color:C.txt,marginBottom:2,
+                fontFamily:'Inter,sans-serif'}}>損失超越機率曲線</div>
+              <div style={{fontSize:10.5,color:C.sub,marginBottom:3,
+                fontFamily:'Inter,sans-serif'}}>Loss Exceedance Curve</div>
+              <div style={{fontSize:10,color:C.fnt,marginBottom:8,
+                fontFamily:'Inter,sans-serif'}}>
+                顯示某一損失金額「被超過」的機率
               </div>
               <MiniExceedance data={exc}/>
-              <div style={{fontSize:10,color:C.sub,marginTop:5,fontFamily:'Inter,sans-serif'}}>
-                縱：超越機率 · 橫：年度損失
+              <div style={{fontSize:10,color:C.sub,marginTop:6,
+                display:'flex',gap:5,alignItems:'center',fontFamily:'Inter,sans-serif'}}>
+                <span style={{display:'inline-block',width:14,
+                  borderTop:`1.5px dashed ${C.red}`}}/>
+                P90 線：90% 情境不超過 {usd(risk.fairResult.p90)}
+              </div>
+              <div style={{fontSize:10,color:C.fnt,marginTop:4,lineHeight:1.6,
+                fontFamily:'Inter,sans-serif'}}>
+                曲線往右代表損失金額越高；往上代表超越機率越高。曲線越陡，尾端風險越集中。
               </div>
             </div>
           </div>
+
+          {/* ── 6. Business Decision Support ── */}
           <div style={{background:C.grnL,border:`1px solid ${C.grn}30`,
-            borderRadius:4,padding:'12px 16px'}}>
+            borderRadius:4,padding:'14px 18px',marginBottom:12}}>
             <div style={{fontSize:10,fontWeight:600,color:C.grn,letterSpacing:'0.1em',
-              textTransform:'uppercase',marginBottom:8,fontFamily:'Inter,sans-serif'}}>業務解讀</div>
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6}}>
+              textTransform:'uppercase',marginBottom:12,fontFamily:'Inter,sans-serif'}}>
+              業務解讀與管理建議 · Business Interpretation
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:12}}>
               {[
-                `EAL（均值）約 ${usd(risk.fairResult.mean)}。此為平均損失，不代表最可能發生值。`,
-                `${risk.fairResult.pLoss}% 的情境產生非零損失。`,
-                `P90：90% 機率下年度損失不超過 ${usd(risk.fairResult.p90)}。`,
-                `P99 尾端風險估計可達 ${usd(risk.fairResult.p99)}，發生機率極低但影響重大。`,
-              ].map((t,i)=>(
-                <div key={i} style={{fontSize:12,color:C.txt,lineHeight:1.7,fontFamily:'Inter,sans-serif'}}>
-                  · {t}
+                {
+                  icon:'📊',
+                  text:`預期年度損失（均值 EAL）約為 ${usd(risk.fairResult.mean)}，代表此情境在長期平均下的年度風險暴露水準。此數值不代表最可能發生的損失金額。`
+                },
+                {
+                  icon:'📈',
+                  text:`在 ${risk.fairResult.N.toLocaleString()} 次模擬中，約 ${risk.fairResult.pLoss}% 的情境產生非零年度損失，代表損失事件在分析期間的預期發生率。`
+                },
+                {
+                  icon:'🎯',
+                  text:`在 90% 的情境下，年度損失不超過 ${usd(risk.fairResult.p90)}（P90 信心水準）。此數值可作為預算規劃或風險準備金的參考依據。`
+                },
+                {
+                  icon:'⚠️',
+                  text:`極端情境（P99）損失估計可達 ${usd(risk.fairResult.p99)}。此為尾端風險（Tail Risk），發生機率極低，但一旦發生影響重大，建議列入壓力測試情境。`
+                },
+              ].map((item,i)=>(
+                <div key={i} style={{display:'flex',gap:8,alignItems:'flex-start'}}>
+                  <span style={{fontSize:14,flexShrink:0,marginTop:1}}>{item.icon}</span>
+                  <p style={{fontSize:12.5,color:C.txt,lineHeight:1.75,
+                    fontFamily:'Inter,sans-serif'}}>{item.text}</p>
                 </div>
               ))}
             </div>
+            <div style={{borderTop:`1px solid ${C.grn}25`,paddingTop:10}}>
+              <div style={{fontSize:10,fontWeight:600,color:C.grn,letterSpacing:'0.1em',
+                textTransform:'uppercase',marginBottom:6,fontFamily:'Inter,sans-serif'}}>
+                管理行動建議
+              </div>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6}}>
+                {[
+                  '若管理層關注高尾端損失，應優先檢視能降低高損失情境的控制措施（如 TCap 或 LM 端）。',
+                  `若組織風險承受門檻低於 P90 水準（${usd(risk.fairResult.p90)}），此情境建議納入優先處理範圍。`,
+                ].map((t,i)=>(
+                  <div key={i} style={{fontSize:12,color:C.grn,lineHeight:1.7,
+                    fontFamily:'Inter,sans-serif',display:'flex',gap:6}}>
+                    <span style={{flexShrink:0}}>→</span>
+                    <span>{t}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
+
+          {/* ── 7. Assumptions & Model Basis ── */}
+          <div style={{background:C.surf,border:`1px solid ${C.bdr}`,
+            borderRadius:4,padding:'12px 16px'}}>
+            <div style={{fontSize:10,fontWeight:600,color:C.sub,letterSpacing:'0.1em',
+              textTransform:'uppercase',marginBottom:10,fontFamily:'Inter,sans-serif'}}>
+              分析基礎與假設說明 · Model Basis
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:10,marginBottom:10}}>
+              {[
+                {k:'模擬方法',v:'蒙地卡羅（Monte Carlo）'},
+                {k:'參數分佈',v:'Beta-PERT 三點估計'},
+                {k:'模擬次數（N）',v:risk.fairResult.N.toLocaleString()},
+              ].map(({k,v})=>(
+                <div key={k} style={{padding:'8px 10px',background:'#F6F4EF',borderRadius:3}}>
+                  <div style={{fontSize:9.5,color:C.fnt,marginBottom:3,
+                    fontFamily:'Inter,sans-serif',letterSpacing:'0.06em',
+                    textTransform:'uppercase'}}>{k}</div>
+                  <div style={{fontSize:12.5,fontWeight:500,color:C.txt,
+                    fontFamily:'Inter,sans-serif'}}>{v}</div>
+                </div>
+              ))}
+            </div>
+            <p style={{fontSize:11,color:C.fnt,lineHeight:1.65,fontFamily:'Inter,sans-serif',
+              fontStyle:'italic'}}>
+              本分析結果取決於目前輸入的 FAIR 參數假設。若情境、控制措施或輸入參數改變，
+              分析結果亦可能隨之變動。建議定期複查並更新假設條件以維持分析的時效性。
+            </p>
+          </div>
+
         </div>
       )}
     </div>
