@@ -3,116 +3,67 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>FAIR 風險量化分析系統</title>
+<title>企業風險管理平台</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
-
-<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@300;400;500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@300;400;500&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-html{font-size:16px;-webkit-font-smoothing:antialiased}
-body{background:#F7F5F0;color:#1A1A18;font-family:'Noto Serif TC','serif';min-height:100vh}
+html{font-size:15px;-webkit-font-smoothing:antialiased}
+body{background:#EEEBE4;color:#111110;font-family:'Inter','Noto Serif TC',sans-serif;min-height:100vh}
 input[type=number]{-moz-appearance:textfield;appearance:textfield}
 input[type=number]::-webkit-inner-spin-button,
 input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none}
-input:focus,select:focus{outline:none}
-.fade{animation:fade .32s ease}
-@keyframes fade{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
-@media print{
-  .no-print{display:none!important}
-  body{background:white}
-  main{padding:0!important}
-  .print-page{page-break-inside:avoid}
-}
+input:focus,select:focus,textarea:focus,button:focus{outline:none}
+textarea{resize:vertical;font-family:inherit}
+::selection{background:#D43820;color:white}
+.fade{animation:fade .22s cubic-bezier(.22,1,.36,1)}
+@keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.serif{font-family:'Noto Serif TC',serif}
+@media print{.no-print{display:none!important}body{background:white}}
 </style>
 </head>
 <body>
 <div id="root"></div>
 <script type="text/babel">
-const { useState, useCallback, useMemo } = React;
-/* ── Pure SVG chart helpers ── */
-function SvgHistogram({data,mean,width=420,height=195}){
-  if(!data||!data.length)return null;
-  const pad={top:8,right:8,bottom:28,left:42};
-  const W=width-pad.left-pad.right, H=height-pad.top-pad.bottom;
-  const maxCt=Math.max(...data.map(d=>d.ct));
-  const minX=data[0].x, maxX=data[data.length-1].x;
-  const xS=v=>((v-minX)/(maxX-minX||1))*W;
-  const yS=v=>H-(v/maxCt)*H;
-  const barW=Math.max(1,(W/data.length)-1);
-  const ticks=data.filter((_,i)=>i%Math.ceil(data.length/5)===0);
-  return(
-    <svg width="100%" viewBox={`0 0 ${width} ${height}`} style={{overflow:'visible'}}>
-      <g transform={`translate(${pad.left},${pad.top})`}>
-        {/* grid */}
-        {[0,.25,.5,.75,1].map(t=>(
-          <line key={t} x1={0} x2={W} y1={H*t} y2={H*t} stroke={C.bdr} strokeDasharray="2 3"/>
-        ))}
-        {/* bars */}
-        {data.map((d,i)=>(
-          <rect key={i} x={xS(d.x)} y={yS(d.ct)} width={barW} height={H-yS(d.ct)}
-            fill={C.grnM} rx={1}/>
-        ))}
-        {/* mean line */}
-        {mean>=minX&&mean<=maxX&&(
-          <line x1={xS(mean)} x2={xS(mean)} y1={0} y2={H}
-            stroke={C.amb} strokeDasharray="5 3" strokeWidth={1.5}/>
-        )}
-        {/* x-axis ticks */}
-        {ticks.map((d,i)=>(
-          <text key={i} x={xS(d.x)} y={H+16} textAnchor="middle"
-            fontSize={8} fill={C.fnt}>{usd(d.x)}</text>
-        ))}
-        {/* y-axis ticks */}
-        {[0,.5,1].map(t=>(
-          <text key={t} x={-5} y={H*t+4} textAnchor="end"
-            fontSize={8} fill={C.fnt}>{Math.round(maxCt*(1-t))}</text>
-        ))}
-        <line x1={0} x2={W} y1={H} y2={H} stroke={C.bdr}/>
-        <line x1={0} x2={0} y1={0} y2={H} stroke={C.bdr}/>
-      </g>
-    </svg>
-  );
-}
-
-function SvgExceedance({data,width=420,height=195}){
-  if(!data||!data.length)return null;
-  const pad={top:8,right:20,bottom:28,left:42};
-  const W=width-pad.left-pad.right, H=height-pad.top-pad.bottom;
-  const minX=data[0].loss, maxX=data[data.length-1].loss;
-  const xS=v=>((v-minX)/(maxX-minX||1))*W;
-  const yS=v=>H-(v/100)*H;
-  const pts=data.map(d=>`${xS(d.loss)},${yS(d.pct)}`).join(' ');
-  const ticks=data.filter((_,i)=>i%Math.ceil(data.length/5)===0);
-  const p90y=yS(10);
-  return(
-    <svg width="100%" viewBox={`0 0 ${width} ${height}`} style={{overflow:'visible'}}>
-      <g transform={`translate(${pad.left},${pad.top})`}>
-        {[0,25,50,75,100].map(t=>(
-          <line key={t} x1={0} x2={W} y1={yS(t)} y2={yS(t)} stroke={C.bdr} strokeDasharray="2 3"/>
-        ))}
-        <polyline points={pts} fill="none" stroke={C.grn} strokeWidth={2}/>
-        <line x1={0} x2={W} y1={p90y} y2={p90y}
-          stroke={C.amb} strokeDasharray="5 3" strokeWidth={1.5}/>
-        <text x={W+2} y={p90y+4} fontSize={9} fill={C.amb}>P90</text>
-        {ticks.map((d,i)=>(
-          <text key={i} x={xS(d.loss)} y={H+16} textAnchor="middle"
-            fontSize={8} fill={C.fnt}>{usd(d.loss)}</text>
-        ))}
-        {[0,25,50,75,100].map(t=>(
-          <text key={t} x={-5} y={yS(t)+4} textAnchor="end"
-            fontSize={8} fill={C.fnt}>{t}%</text>
-        ))}
-        <line x1={0} x2={W} y1={H} y2={H} stroke={C.bdr}/>
-        <line x1={0} x2={0} y1={0} y2={H} stroke={C.bdr}/>
-      </g>
-    </svg>
-  );
-}
+const{useState,useCallback,useMemo,useRef,useEffect}=React;
 
 /* ═══════════════════════════════════════════════════
-   MATH — Beta-PERT distribution (Marsaglia-Tsang)
+   DESIGN TOKENS
+═══════════════════════════════════════════════════ */
+const C={
+  bg:'#EEEBE4',  surf:'#FFFFFF', bdr:'#E0DDD6',
+  txt:'#111110', sub:'#64615A',  fnt:'#A8A49A',
+  grn:'#2C5018', grnL:'#EAF0DC',grnM:'#4E7828',
+  red:'#D43820', redL:'#FAEAE6',
+  blu:'#1840BE', bluL:'#EBF0FF',
+  amb:'#9E6818', ambL:'#F6EDDA',
+};
+
+const PRI_CFG={
+  critical:{label:'緊急',color:'#D43820',bg:'#FAEAE6'},
+  high:    {label:'高',  color:'#B86020',bg:'#F6EDDA'},
+  medium:  {label:'中',  color:'#2C5018',bg:'#EAF0DC'},
+  low:     {label:'低',  color:'#A8A49A',bg:'#F0EDE8'},
+};
+const STATUS_CFG={
+  registered:  {label:'已登記',   color:'#A8A49A',bg:'#F0EDE8',  step:0},
+  analyzed:    {label:'已分析',   color:'#1840BE',bg:'#EBF0FF',  step:1},
+  evaluated:   {label:'已評估',   color:'#9E6818',bg:'#F6EDDA',  step:2},
+  in_treatment:{label:'處理中',   color:'#2C5018',bg:'#EAF0DC',  step:3},
+  monitoring:  {label:'監控中',   color:'#4E7828',bg:'#D8ECBC',  step:4},
+  closed:      {label:'已結案',   color:'#A8A49A',bg:'#EDEAE3',  step:5},
+};
+const TREAT_STATUS={
+  not_started:{label:'未開始',color:'#A8A49A'},
+  in_progress:{label:'進行中',color:'#9E6818'},
+  completed:  {label:'已完成',color:'#2C5018'},
+  overdue:    {label:'已逾期',color:'#D43820'},
+};
+
+/* ═══════════════════════════════════════════════════
+   MATH — Beta-PERT
 ═══════════════════════════════════════════════════ */
 function normalRv(){
   let u,v,s;
@@ -140,18 +91,41 @@ function pertRv(lo,ml,hi){
 }
 const clamp=(x,lo,hi)=>Math.max(lo,Math.min(hi,x));
 
-/* ═══════════════════════════════════════════════════
-   MONTE CARLO SIMULATION
-═══════════════════════════════════════════════════ */
-function runMC(p,N=10000){
+function runMC(nodes,N=10000){
   const out=new Array(N);
   for(let i=0;i<N;i++){
-    const tef=pertRv(p.cf.lo,p.cf.ml,p.cf.hi)*clamp(pertRv(p.poa.lo,p.poa.ml,p.poa.hi),0,1);
-    const vul=pertRv(p.tcap.lo,p.tcap.ml,p.tcap.hi)>pertRv(p.rs.lo,p.rs.ml,p.rs.hi)?1:0;
-    const lef=tef*vul;
-    const lm=pertRv(p.pl.lo,p.pl.ml,p.pl.hi)
-             +clamp(pertRv(p.slef.lo,p.slef.ml,p.slef.hi),0,1)
-             *pertRv(p.slm.lo,p.slm.ml,p.slm.hi);
+    /* ── LEF ─────────────────────── */
+    let lef;
+    if(nodes.lef.mode==='direct'){
+      lef=pertRv(nodes.lef.lo,nodes.lef.ml,nodes.lef.hi);
+    } else {
+      /* derive TEF */
+      let tef;
+      if(nodes.tef.mode==='direct'){
+        tef=pertRv(nodes.tef.lo,nodes.tef.ml,nodes.tef.hi);
+      } else {
+        tef=pertRv(nodes.cf.lo,nodes.cf.ml,nodes.cf.hi)
+           *clamp(pertRv(nodes.poa.lo,nodes.poa.ml,nodes.poa.hi),0,1);
+      }
+      /* derive Vul */
+      let vul;
+      if(nodes.vul.mode==='direct'){
+        vul=clamp(pertRv(nodes.vul.lo,nodes.vul.ml,nodes.vul.hi),0,1);
+      } else {
+        vul=pertRv(nodes.tcap.lo,nodes.tcap.ml,nodes.tcap.hi)>
+            pertRv(nodes.rs.lo,nodes.rs.ml,nodes.rs.hi)?1:0;
+      }
+      lef=tef*vul;
+    }
+    /* ── LM ─────────────────────── */
+    let lm;
+    if(nodes.lm.mode==='direct'){
+      lm=pertRv(nodes.lm.lo,nodes.lm.ml,nodes.lm.hi);
+    } else {
+      lm=pertRv(nodes.pl.lo,nodes.pl.ml,nodes.pl.hi)
+        +clamp(pertRv(nodes.slef.lo,nodes.slef.ml,nodes.slef.hi),0,1)
+        *pertRv(nodes.slm.lo,nodes.slm.ml,nodes.slm.hi);
+    }
     out[i]=lef*lm;
   }
   out.sort((a,b)=>a-b);
@@ -160,7 +134,7 @@ function runMC(p,N=10000){
   const nz=out.filter(v=>v>0).length;
   return{raw:out,N,mean:sum/N,p50:pct(.5),p90:pct(.9),p95:pct(.95),p99:pct(.99),pLoss:(nz/N*100).toFixed(1)};
 }
-function mkHist(sorted,bins=48){
+function mkHist(sorted,bins=40){
   const nz=sorted.filter(v=>v>0);
   if(!nz.length)return[];
   const lo=nz[0],hi=nz[nz.length-1];
@@ -170,713 +144,1734 @@ function mkHist(sorted,bins=48){
   return cts.map((ct,i)=>({x:lo+(i+.5)*bw,ct})).filter(b=>b.ct>0);
 }
 function mkExc(sorted){
-  const N=sorted.length,step=Math.max(1,Math.floor(N/240)),pts=[];
+  const N=sorted.length,step=Math.max(1,Math.floor(N/200)),pts=[];
   for(let i=0;i<N;i+=step)pts.push({loss:sorted[i],pct:(N-i)/N*100});
   pts.push({loss:sorted[N-1],pct:0});
   return pts;
 }
-
-/* ═══════════════════════════════════════════════════
-   FORMATTERS
-═══════════════════════════════════════════════════ */
 const usd=v=>{
+  if(!v||isNaN(v))return'—';
   if(v>=1e6)return`$${(v/1e6).toFixed(2)}M`;
   if(v>=1e3)return`$${(v/1e3).toFixed(1)}K`;
   return`$${Math.round(v)}`;
 };
-
-/* ═══════════════════════════════════════════════════
-   DESIGN TOKENS
-═══════════════════════════════════════════════════ */
-const C={
-  bg:'#F7F5F0',surf:'#FFFFFF',bdr:'#E8E4DC',
-  txt:'#1A1A18',sub:'#6B6860',fnt:'#B5B0A8',
-  grn:'#4E6030',grnL:'#EBF0E2',grnM:'#7E9060',
-  amb:'#9E6A18',ambL:'#F4EDDA',
+const today=()=>new Date().toISOString().split('T')[0];
+const fmtDate=s=>{
+  if(!s)return'—';
+  try{return new Date(s).toLocaleDateString('zh-TW',{year:'numeric',month:'2-digit',day:'2-digit'});}
+  catch{return s;}
 };
+const isOverdue=d=>d&&new Date(d)<new Date();
 
 /* ═══════════════════════════════════════════════════
-   FAIR BILINGUAL TERMS
+   STATIC DATA
 ═══════════════════════════════════════════════════ */
 const TERMS={
-  cf:  {zh:'接觸頻率',        en:'Contact Frequency',          abbr:'CF',   unit:'次/年',  desc:'威脅者每年與目標資產發生接觸的預估次數'},
-  poa: {zh:'採取行動機率',    en:'Probability of Action',      abbr:'PoA',  unit:'0 – 1', desc:'每次接觸後，威脅者實際採取攻擊行動的機率'},
-  tcap:{zh:'威脅能力',        en:'Threat Capability',          abbr:'TCap', unit:'1 – 10',desc:'威脅者克服防護措施的技術能力強度（越高越危險）'},
-  rs:  {zh:'抵抗強度',        en:'Resistance Strength',        abbr:'RS',   unit:'1 – 10',desc:'現有控制措施阻擋威脅者的強度（越高保護越強）'},
-  pl:  {zh:'主要損失',        en:'Primary Loss',               abbr:'PL',   unit:'USD',   desc:'損失事件直接造成的財務衝擊（不含次要損失）'},
-  slef:{zh:'次要損失事件頻率', en:'Secondary Loss Event Freq.', abbr:'SLEF', unit:'0 – 1', desc:'主要損失後引發次要損失的機率（如監管罰款、訴訟）'},
-  slm: {zh:'次要損失規模',    en:'Secondary Loss Magnitude',   abbr:'SLM',  unit:'USD',   desc:'次要損失事件的預估財務規模'},
+  /* switchable mid-level nodes */
+  lef: {zh:'損失事件頻率', en:'Loss Event Frequency',         abbr:'LEF', unit:'次/年',desc:'每年預期發生損失事件的頻率。可直接估計，或由 TEF × 脆弱性推導。'},
+  tef: {zh:'威脅事件頻率', en:'Threat Event Frequency',       abbr:'TEF', unit:'次/年',desc:'威脅者每年對目標採取行動的頻率。可直接估計，或由 CF × PoA 推導。'},
+  vul: {zh:'脆弱性',       en:'Vulnerability',                abbr:'Vul', unit:'0–1', desc:'給定威脅事件時，損失事件發生的機率。可直接估計，或由 P(TCap > RS) 推導。'},
+  lm:  {zh:'損失規模',     en:'Loss Magnitude',               abbr:'LM',  unit:'USD', desc:'損失事件的財務衝擊規模。通常由 PL + SLEF × SLM 推導，也可直接估計（進階模式）。'},
+  /* leaf nodes */
+  cf:  {zh:'接觸頻率',        en:'Contact Frequency',              abbr:'CF',   unit:'次/年',desc:'威脅者每年與目標資產接觸的預估次數'},
+  poa: {zh:'採取行動機率',    en:'Probability of Action',          abbr:'PoA',  unit:'0–1', desc:'每次接觸後，威脅者實際採取攻擊行動的機率'},
+  tcap:{zh:'威脅能力',        en:'Threat Capability',              abbr:'TCap', unit:'1–10',desc:'威脅者克服防護措施的技術能力（越高越危險）'},
+  rs:  {zh:'抵抗強度',        en:'Resistance Strength',            abbr:'RS',   unit:'1–10',desc:'現有控制措施阻擋威脅者的強度（越高越安全）'},
+  pl:  {zh:'主要損失',        en:'Primary Loss',                   abbr:'PL',   unit:'USD', desc:'損失事件直接造成的財務衝擊'},
+  slef:{zh:'次要損失事件頻率', en:'Secondary Loss Event Frequency', abbr:'SLEF', unit:'0–1', desc:'主要損失後引發次要損失的機率'},
+  slm: {zh:'次要損失規模',    en:'Secondary Loss Magnitude',       abbr:'SLM',  unit:'USD', desc:'次要損失事件的預估財務規模'},
 };
-
-/* ═══════════════════════════════════════════════════
-   SCENARIO OPTIONS
-═══════════════════════════════════════════════════ */
 const OPTS={
-  assets:['客戶個資資料庫 (Customer PII)','財務與帳務系統 (Financial System)','員工薪資資料 (HR/Payroll)','原始碼儲存庫 (Source Code Repo)','生產伺服器 (Production Server)','電子郵件系統 (Email System)'],
-  actors:['外部駭客－機會型 (Opportunistic)','外部駭客－目標型 (Targeted APT)','惡意內部人員 (Malicious Insider)','粗心員工 (Negligent Employee)','競爭對手 (Competitor)','國家級威脅者 (Nation-State)'],
-  events:['未授權存取 (Unauthorized Access)','勒索軟體攻擊 (Ransomware)','資料外洩 (Data Exfiltration)','DDoS 服務中斷','社交工程攻擊 (Social Engineering)','供應鏈滲透 (Supply Chain)'],
-  losses:['資料外洩罰款與法規合規費用','業務中斷與收入損失','聲譽損害與客戶流失','事件回應與系統復原費用','法律訴訟與和解費用','智慧財產損失'],
+  assets:['客戶個資資料庫 (Customer PII)','財務與帳務系統 (Financial System)','員工薪資資料 (HR/Payroll)','原始碼儲存庫 (Source Code Repo)','生產伺服器 (Production Server)','電子郵件系統 (Email System)','VPN / 遠端存取'],
+  actors:['外部駭客－機會型','外部駭客－目標型 (APT)','惡意內部人員','粗心員工','競爭對手','國家級威脅者'],
+  events:['未授權存取','勒索軟體攻擊','資料外洩 (Exfiltration)','DDoS 服務中斷','社交工程攻擊','供應鏈滲透','特權濫用'],
+  losses:['資料外洩罰款與合規費用','業務中斷與收入損失','聲譽損害與客戶流失','事件回應與系統復原','法律訴訟與和解費用','智慧財產損失'],
+};
+/* ═══════════════════════════════════════════════════
+   NODE MODE DATA MODEL
+   mode: 'direct' | 'derived'
+   effective: 'direct' | 'derived' | 'info' (locked by parent)
+═══════════════════════════════════════════════════ */
+const DEF_NODES={
+  /* switchable nodes — can be direct or derived */
+  lef: {mode:'derived',lo:0,   ml:0,    hi:0   },
+  tef: {mode:'derived',lo:0,   ml:0,    hi:0   },
+  vul: {mode:'derived',lo:0,   ml:0,    hi:0   },
+  lm:  {mode:'derived',lo:0,   ml:0,    hi:0   },
+  /* leaf nodes — always direct (mode locked to 'direct') */
+  cf:  {mode:'direct', lo:12,  ml:24,   hi:52  },
+  poa: {mode:'direct', lo:0.05,ml:0.15, hi:0.30},
+  tcap:{mode:'direct', lo:4,   ml:6,    hi:8   },
+  rs:  {mode:'direct', lo:4,   ml:6,    hi:8   },
+  pl:  {mode:'direct', lo:50000,ml:200000,hi:500000},
+  slef:{mode:'direct', lo:0.2, ml:0.4,  hi:0.7 },
+  slm: {mode:'direct', lo:20000,ml:80000,hi:250000},
 };
 
-/* ═══════════════════════════════════════════════════
-   DEFAULT PARAMETER VALUES
-═══════════════════════════════════════════════════ */
-const DEF={
-  cf:  {lo:12,    ml:24,     hi:52    },
-  poa: {lo:0.05,  ml:0.15,   hi:0.30  },
-  tcap:{lo:4,     ml:6,      hi:8     },
-  rs:  {lo:4,     ml:6,      hi:8     },
-  pl:  {lo:50000, ml:200000, hi:500000},
-  slef:{lo:0.2,   ml:0.4,    hi:0.7   },
-  slm: {lo:20000, ml:80000,  hi:250000},
-};
+/* Which nodes support mode switching */
+const SWITCHABLE=new Set(['lef','tef','vul','lm']);
 
-/* ═══════════════════════════════════════════════════
-   SHARED UI PRIMITIVES
-═══════════════════════════════════════════════════ */
-function Hdr({n,zh,en,desc}){
-  return(
-    <div style={{marginBottom:22}}>
-      <div style={{fontSize:10,letterSpacing:'0.2em',color:C.fnt,textTransform:'uppercase',marginBottom:4}}>Step {n}</div>
-      <h2 style={{fontSize:21,fontWeight:400,color:C.txt,letterSpacing:'0.01em',marginBottom:5}}>{zh}</h2>
-      <div style={{fontSize:11,color:C.fnt,letterSpacing:'0.07em',marginBottom:8}}>{en}</div>
-      {desc&&<p style={{fontSize:13,color:C.sub,lineHeight:1.78}}>{desc}</p>}
-    </div>
-  );
+/* Resolve effective status of a node given current modes */
+function nodeEffective(id,nodes){
+  if(id==='risk')return 'derived';
+  if(id==='sl')  return 'derived';
+  if(['cf','poa'].includes(id)){
+    if(nodes.lef.mode==='direct')return 'info';
+    if(nodes.tef.mode==='direct')return 'info';
+    return 'direct';
+  }
+  if(['tcap','rs'].includes(id)){
+    if(nodes.lef.mode==='direct')return 'info';
+    if(nodes.vul.mode==='direct')return 'info';
+    return 'direct';
+  }
+  if(['pl','slef','slm'].includes(id)){
+    if(nodes.lm.mode==='direct')return 'info';
+    return 'direct';
+  }
+  if(id==='tef'||id==='vul'){
+    if(nodes.lef.mode==='direct')return 'info';
+    return nodes[id].mode;
+  }
+  return nodes[id]?nodes[id].mode:'direct';
 }
 
-function Btn({ch,onClick,disabled,v='primary',style={}}){
+function cloneNodes(n){
+  const r={};
+  Object.keys(n).forEach(k=>r[k]={...n[k]});
+  return r;
+}
+
+/* ═══════════════════════════════════════════════════
+   RISK FACTORY
+═══════════════════════════════════════════════════ */
+function newRisk(overrides={}){
+  return{
+    id:Date.now().toString()+Math.random().toString(36).slice(2),
+    name:'',createdAt:today(),updatedAt:today(),
+    status:'registered',priority:'',owner:'',
+    scenario:{asset:'',actor:'',event:'',loss:'',concern:'',assumptions:''},
+    fairNodes:cloneNodes(DEF_NODES),
+    fairResult:null,
+    evaluation:{decision:'',rationale:'',evaluator:'',reviewedAt:''},
+    treatment:{strategy:'',description:'',controls:'',owner:'',dueDate:'',
+      treatStatus:'not_started',budget:'',expectedResidual:'',rationale:''},
+    monitoring:{reviewCycle:'quarterly',nextReview:'',notes:'',lastReviewed:''},
+    ...overrides
+  };
+}
+
+/* ═══════════════════════════════════════════════════
+   LOCAL STORAGE
+═══════════════════════════════════════════════════ */
+const LS_KEY='fair_register_v2';
+function loadRisks(){
+  try{
+    const d=localStorage.getItem(LS_KEY);
+    if(!d||d==='undefined'||d==='null')return[];
+    return JSON.parse(d)||[];
+  }catch{return[];}
+}
+function saveRisks(risks){
+  try{localStorage.setItem(LS_KEY,JSON.stringify(risks));}catch{}
+}
+
+/* ═══════════════════════════════════════════════════
+   SHARED UI ATOMS
+═══════════════════════════════════════════════════ */
+function Btn({ch,onClick,disabled,v='primary',sm,style={}}){
+  const p=sm?'6px 14px':'9px 20px';
+  const fs=sm?11.5:12.5;
   const vs={
-    primary:{background:C.grn,color:'white',border:'none'},
+    primary:{background:C.txt,color:'white',border:'none'},
     ghost:{background:'transparent',color:C.sub,border:`1px solid ${C.bdr}`},
-    amber:{background:C.amb,color:'white',border:'none'},
+    red:{background:C.red,color:'white',border:'none'},
+    grn:{background:C.grn,color:'white',border:'none'},
+    outline:{background:'transparent',color:C.txt,border:`1px solid ${C.txt}`},
   };
   return(
     <button onClick={onClick} disabled={disabled} style={{
-      ...vs[v],padding:'10px 22px',borderRadius:5,fontSize:13.5,
-      cursor:disabled?'not-allowed':'pointer',fontFamily:'inherit',
-      opacity:disabled?0.5:1,letterSpacing:'0.03em',transition:'opacity .2s',...style,
+      ...vs[v],padding:p,borderRadius:3,fontSize:fs,fontWeight:500,
+      cursor:disabled?'not-allowed':'pointer',fontFamily:'Inter,sans-serif',
+      opacity:disabled?0.38:1,letterSpacing:'0.01em',transition:'opacity .12s',...style
     }}>{ch}</button>
   );
 }
 
-function Card({title,en,accent,children}){
+function TInput({value,onChange,placeholder,type='text',rows,sm}){
+  const p=sm?'6px 9px':'8px 10px';
+  const s={width:'100%',padding:p,border:`1px solid ${C.bdr}`,borderRadius:3,
+    fontSize:13,fontFamily:'Inter,sans-serif',color:C.txt,background:C.surf};
+  if(rows)return <textarea value={value} onChange={onChange} placeholder={placeholder} rows={rows} style={s}/>;
+  return <input type={type} value={value} onChange={onChange} placeholder={placeholder} style={s}/>;
+}
+
+function TSelect({value,onChange,options,placeholder,sm}){
   return(
-    <div style={{background:C.surf,border:`1px solid ${C.bdr}`,borderRadius:8,overflow:'hidden',marginBottom:14}}>
-      <div style={{background:accent?C.ambL:C.grnL,padding:'9px 16px',borderBottom:`1px solid ${C.bdr}`}}>
-        <span style={{fontSize:14,fontWeight:500,color:C.txt}}>{title}</span>
-        <span style={{fontSize:11,color:C.sub,marginLeft:8}}>{en}</span>
-      </div>
-      <div style={{padding:16}}>{children}</div>
-    </div>
+    <select value={value} onChange={onChange} style={{
+      width:'100%',padding:sm?'6px 9px':'8px 10px',border:`1px solid ${C.bdr}`,
+      borderRadius:3,fontSize:13,fontFamily:'Inter,sans-serif',
+      color:value?C.txt:C.fnt,background:C.surf,cursor:'pointer',appearance:'auto'}}>
+      {placeholder&&<option value="">{placeholder}</option>}
+      {options.map(o=><option key={o.v||o} value={o.v||o}>{o.l||o}</option>)}
+    </select>
   );
 }
 
-function PRow({k,val,onChange,mode}){
-  const t=TERMS[k];
-  const isUSD=t.unit==='USD';
-  const isProb=t.unit.includes('0 –');
-  const step=isUSD?5000:isProb?0.01:0.5;
+function PriBadge({priority,small}){
+  const p=PRI_CFG[priority];
+  if(!p)return null;
   return(
-    <div style={{marginBottom:18}}>
-      <div style={{marginBottom:5}}>
-        <span style={{fontSize:13.5,fontWeight:500,color:C.txt}}>{t.zh}</span>
-        <span style={{fontSize:11,color:C.fnt,marginLeft:8}}>{mode==='professional'?`${t.en}  ·  ${t.abbr}`:t.abbr}</span>
-      </div>
-      <div style={{fontSize:12,color:C.sub,marginBottom:5,lineHeight:1.55}}>{t.desc}</div>
-      <div style={{fontSize:11,color:C.fnt,marginBottom:7}}>單位 Unit: {t.unit}</div>
-      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8}}>
-        {[['lo','最低 Min'],['ml','最可能 ML'],['hi','最高 Max']].map(([f,lbl])=>(
-          <div key={f}>
-            <div style={{fontSize:11,color:C.sub,marginBottom:3}}>{lbl}</div>
-            <input type="number" value={val[f]} step={step}
-              onChange={e=>onChange(k,f,e.target.value)}
-              style={{width:'100%',padding:'6px 8px',border:`1px solid ${C.bdr}`,borderRadius:4,
-                fontSize:13,fontFamily:'inherit',color:C.txt,background:C.surf}}
-            />
-          </div>
-        ))}
-      </div>
+    <span style={{display:'inline-block',padding:small?'2px 7px':'3px 9px',
+      borderRadius:2,fontSize:small?10:11,fontWeight:600,
+      color:p.color,background:p.bg,fontFamily:'Inter,sans-serif',
+      letterSpacing:'0.04em',whiteSpace:'nowrap'}}>
+      {p.label}
+    </span>
+  );
+}
+
+function StatusBadge({status,small}){
+  const s=STATUS_CFG[status]||STATUS_CFG.registered;
+  return(
+    <span style={{display:'inline-block',padding:small?'2px 7px':'3px 9px',
+      borderRadius:2,fontSize:small?10:11,fontWeight:500,
+      color:s.color,background:s.bg,fontFamily:'Inter,sans-serif',
+      letterSpacing:'0.04em',whiteSpace:'nowrap'}}>
+      {s.label}
+    </span>
+  );
+}
+
+function SectionLabel({children}){
+  return(
+    <div style={{fontSize:10,fontWeight:600,letterSpacing:'0.14em',
+      textTransform:'uppercase',color:C.fnt,fontFamily:'Inter,sans-serif',
+      marginBottom:10,paddingBottom:6,borderBottom:`1px solid ${C.bdr}`}}>
+      {children}
     </div>
   );
 }
 
 /* ═══════════════════════════════════════════════════
-   STEP 0 — SCENARIO DEFINITION
+   SVG CHARTS (compact)
 ═══════════════════════════════════════════════════ */
-function S0({sc,setSc,mode,next}){
-  const fields=[
-    {k:'asset',zh:'資產',     en:'Asset',        desc:'分析對象：哪項資產面臨風險？',opts:OPTS.assets},
-    {k:'actor',zh:'威脅來源', en:'Threat Actor',  desc:'誰可能造成威脅？',            opts:OPTS.actors},
-    {k:'event',zh:'威脅行為', en:'Threat Event',  desc:'威脅者可能採取什麼行動？',    opts:OPTS.events},
-    {k:'loss', zh:'損失事件', en:'Loss Event',    desc:'可能造成什麼業務損失事件？（例：資料外洩、業務中斷）',      opts:OPTS.losses},
-  ];
-  // Track which fields are in "custom" mode
-  const [customMode,setCustomMode]=useState({asset:false,actor:false,event:false,loss:false});
-  const handleSel=(k,v)=>{
-    if(v==='__custom__'){
-      setCustomMode(m=>({...m,[k]:true}));
-      setSc(s=>({...s,[k]:''}));
-    } else {
-      setCustomMode(m=>({...m,[k]:false}));
-      setSc(s=>({...s,[k]:v}));
+function MiniHistogram({data,mean}){
+  if(!data||!data.length)return null;
+  const W=370,H=150,pad={t:6,r:4,b:22,l:36};
+  const iW=W-pad.l-pad.r,iH=H-pad.t-pad.b;
+  const maxCt=Math.max(...data.map(d=>d.ct));
+  const minX=data[0].x,maxX=data[data.length-1].x;
+  const xS=v=>((v-minX)/(maxX-minX||1))*iW;
+  const yS=v=>iH-(v/maxCt)*iH;
+  const bW=Math.max(1,(iW/data.length)-0.8);
+  const tks=data.filter((_,i)=>i%Math.ceil(data.length/4)===0);
+  return(
+    <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{overflow:'visible'}}>
+      <g transform={`translate(${pad.l},${pad.t})`}>
+        {[0,.5,1].map(t=>(
+          <line key={t} x1={0} x2={iW} y1={iH*t} y2={iH*t} stroke={C.bdr} strokeDasharray="2 4"/>
+        ))}
+        {data.map((d,i)=>(
+          <rect key={i} x={xS(d.x)} y={yS(d.ct)} width={bW} height={iH-yS(d.ct)}
+            fill={C.grnM} rx={1} opacity="0.85"/>
+        ))}
+        {mean>=minX&&mean<=maxX&&(
+          <line x1={xS(mean)} x2={xS(mean)} y1={0} y2={iH}
+            stroke={C.red} strokeDasharray="4 3" strokeWidth={1.5}/>
+        )}
+        {tks.map((d,i)=>(
+          <text key={i} x={xS(d.x)} y={iH+14} textAnchor="middle"
+            fontSize={7.5} fill={C.fnt}>{usd(d.x)}</text>
+        ))}
+        {[0,.5,1].map(t=>(
+          <text key={t} x={-4} y={iH*t+3} textAnchor="end"
+            fontSize={7.5} fill={C.fnt}>{Math.round(maxCt*(1-t))}</text>
+        ))}
+        <line x1={0} x2={iW} y1={iH} y2={iH} stroke={C.bdr}/>
+        <line x1={0} x2={0} y1={0} y2={iH} stroke={C.bdr}/>
+      </g>
+    </svg>
+  );
+}
+
+function MiniExceedance({data}){
+  if(!data||!data.length)return null;
+  const W=370,H=150,pad={t:6,r:18,b:22,l:36};
+  const iW=W-pad.l-pad.r,iH=H-pad.t-pad.b;
+  const minX=data[0].loss,maxX=data[data.length-1].loss;
+  const xS=v=>((v-minX)/(maxX-minX||1))*iW;
+  const yS=v=>iH-(v/100)*iH;
+  const pts=data.map(d=>`${xS(d.loss)},${yS(d.pct)}`).join(' ');
+  const p90y=yS(10);
+  const tks=data.filter((_,i)=>i%Math.ceil(data.length/4)===0);
+  return(
+    <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{overflow:'visible'}}>
+      <g transform={`translate(${pad.l},${pad.t})`}>
+        {[0,25,50,75,100].map(t=>(
+          <line key={t} x1={0} x2={iW} y1={yS(t)} y2={yS(t)} stroke={C.bdr} strokeDasharray="2 4"/>
+        ))}
+        <polyline points={pts} fill="none" stroke={C.grn} strokeWidth={1.8}/>
+        <line x1={0} x2={iW} y1={p90y} y2={p90y}
+          stroke={C.red} strokeDasharray="4 3" strokeWidth={1.2}/>
+        <text x={iW+2} y={p90y+3} fontSize={8} fill={C.red}>P90</text>
+        {tks.map((d,i)=>(
+          <text key={i} x={xS(d.loss)} y={iH+14} textAnchor="middle"
+            fontSize={7.5} fill={C.fnt}>{usd(d.loss)}</text>
+        ))}
+        {[0,50,100].map(t=>(
+          <text key={t} x={-4} y={yS(t)+3} textAnchor="end"
+            fontSize={7.5} fill={C.fnt}>{t}%</text>
+        ))}
+        <line x1={0} x2={iW} y1={iH} y2={iH} stroke={C.bdr}/>
+        <line x1={0} x2={0} y1={0} y2={iH} stroke={C.bdr}/>
+      </g>
+    </svg>
+  );
+}
+
+/* ═══════════════════════════════════════════════════
+   FAIR DIAGRAM ENGINE — multi-level estimation
+   Each node: direct estimate OR derived from children
+═══════════════════════════════════════════════════ */
+
+/* Compute display values from nodes */
+function computeVals(nodes){
+  const pm=(lo,ml,hi)=>(lo+4*ml+hi)/6;
+  /* leaf means */
+  const cf_m =pm(nodes.cf.lo, nodes.cf.ml, nodes.cf.hi);
+  const poa_m=Math.min(1,Math.max(0,pm(nodes.poa.lo,nodes.poa.ml,nodes.poa.hi)));
+  const tc_m =pm(nodes.tcap.lo,nodes.tcap.ml,nodes.tcap.hi);
+  const rs_m =pm(nodes.rs.lo,  nodes.rs.ml,  nodes.rs.hi);
+  const pl_m =pm(nodes.pl.lo,  nodes.pl.ml,  nodes.pl.hi);
+  const slef_m=Math.min(1,Math.max(0,pm(nodes.slef.lo,nodes.slef.ml,nodes.slef.hi)));
+  const slm_m=pm(nodes.slm.lo, nodes.slm.ml, nodes.slm.hi);
+  /* TEF */
+  const tef_direct=nodes.tef.mode==='direct';
+  const tef_m=tef_direct?pm(nodes.tef.lo,nodes.tef.ml,nodes.tef.hi):cf_m*poa_m;
+  /* Vul (use quick sample for derived, direct uses ml) */
+  const vul_direct=nodes.vul.mode==='direct';
+  const vul_ml=vul_direct?Math.min(1,Math.max(0,pm(nodes.vul.lo,nodes.vul.ml,nodes.vul.hi))):null;
+  /* LEF */
+  const lef_direct=nodes.lef.mode==='direct';
+  const lef_ml=lef_direct?pm(nodes.lef.lo,nodes.lef.ml,nodes.lef.hi):null;
+  /* LM */
+  const lm_direct=nodes.lm.mode==='direct';
+  const lm_m=lm_direct?pm(nodes.lm.lo,nodes.lm.ml,nodes.lm.hi):(pl_m+slef_m*slm_m);
+  return{cf_m,poa_m,tc_m,rs_m,pl_m,slef_m,slm_m,tef_m,vul_ml,lef_ml,lm_m};
+}
+
+function FairDiagram({nodes,setNodes}){
+  const[active,setActive]=useState(null);
+  const[panelPos,setPanelPos]=useState({left:0,top:0});
+  const svgRef=useRef(null);
+
+  /* quick vul% via mini-MC (only when derived) */
+  const vul_pct=useMemo(()=>{
+    if(nodes.lef.mode==='direct')return null;
+    if(nodes.vul.mode==='direct'){
+      const pm=(lo,ml,hi)=>(lo+4*ml+hi)/6;
+      return Math.round(Math.min(1,Math.max(0,pm(nodes.vul.lo,nodes.vul.ml,nodes.vul.hi)))*100);
     }
-  };
-  const ok=fields.every(f=>sc[f.k]&&sc[f.k].trim());
-  return(
-    <div className="fade">
-      <Hdr n={1} zh="場景定義" en="Scenario Definition"
-        desc="請描述希望分析的風險情境。FAIR 分析從明確的場景出發，確定資產、威脅來源、威脅行為與損失類型四個核心要素。"/>
-      <div style={{background:C.ambL,border:'1px solid #DEC98A',borderRadius:8,padding:'11px 16px',marginBottom:20,display:'flex',gap:10}}>
-        <span style={{fontSize:14,flexShrink:0,marginTop:1}}>💡</span>
-        <div style={{fontSize:12.5,color:'#7A5A1A',lineHeight:1.7}}>
-          <strong>範例：</strong>外部目標型駭客對客戶個資資料庫發動資料外洩攻擊，導致資料外洩罰款與合規費用增加。
-        </div>
-      </div>
-      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
-        {fields.map(({k,zh,en,desc,opts})=>(
-          <div key={k} style={{background:C.surf,border:`1px solid ${C.bdr}`,borderRadius:8,padding:16}}>
-            <div style={{fontSize:12,color:C.sub,marginBottom:6}}>{desc}</div>
-            <div style={{marginBottom:8}}>
-              <span style={{fontSize:14.5,fontWeight:500}}>{zh}</span>
-              {mode==='professional'&&<span style={{fontSize:11,color:C.fnt,marginLeft:8}}>{en}</span>}
-            </div>
-            <select
-              value={customMode[k]?'__custom__':(sc[k]||'')}
-              onChange={e=>handleSel(k,e.target.value)}
-              style={{width:'100%',padding:'9px 12px',border:`1px solid ${C.bdr}`,borderRadius:5,
-                fontFamily:'inherit',fontSize:13,color:C.txt,background:C.surf,cursor:'pointer'}}>
-              <option value="">— 請選擇 —</option>
-              {opts.map(o=><option key={o} value={o}>{o}</option>)}
-              <option value="__custom__">✏ 自訂輸入…</option>
-            </select>
-            {customMode[k]&&(
-              <input
-                autoFocus
-                type="text"
-                placeholder={`請輸入自訂${zh}…`}
-                value={sc[k]||''}
-                onChange={e=>setSc(s=>({...s,[k]:e.target.value}))}
-                style={{marginTop:8,width:'100%',padding:'8px 12px',
-                  border:`1.5px solid ${C.grn}`,borderRadius:5,
-                  fontFamily:'inherit',fontSize:13,color:C.txt,background:'#FAFFF5'}}
-              />
-            )}
-          </div>
-        ))}
-      </div>
-      {ok&&(
-        <div className="fade" style={{marginTop:14,background:C.grnL,border:'1px solid #BDCFA0',borderRadius:8,padding:16}}>
-          <div style={{fontSize:12,fontWeight:500,color:C.grn,marginBottom:6}}>✓ 場景摘要 Scenario Summary</div>
-          <p style={{fontSize:13.5,color:C.txt,lineHeight:1.9}}>
-            <strong>{sc.actor}</strong> 對 <strong>「{sc.asset}」</strong> 發動 <strong>{sc.event}</strong>，
-            可能造成 <strong>{sc.loss}</strong>。
-          </p>
-        </div>
-      )}
-      <div style={{marginTop:22,display:'flex',justifyContent:'flex-end'}}>
-        <Btn ch="下一步：輸入 FAIR 參數 →" onClick={next} disabled={!ok}/>
-      </div>
-    </div>
-  );
-}
+    let h=0;
+    for(let i=0;i<400;i++){
+      if(pertRv(nodes.tcap.lo,nodes.tcap.ml,nodes.tcap.hi)>
+         pertRv(nodes.rs.lo,nodes.rs.ml,nodes.rs.hi))h++;
+    }
+    return Math.round(h/400*100);
+  },[nodes.lef.mode,nodes.vul.mode,
+     nodes.vul.lo,nodes.vul.ml,nodes.vul.hi,
+     nodes.tcap.lo,nodes.tcap.ml,nodes.tcap.hi,
+     nodes.rs.lo,nodes.rs.ml,nodes.rs.hi]);
 
-/* ═══════════════════════════════════════════════════
-   STEP 1 — FAIR PARAMETER INPUT
-═══════════════════════════════════════════════════ */
-function S1({params,upd,mode,back,next}){
+  const v=useMemo(()=>computeVals(nodes),[
+    nodes.cf.lo,nodes.cf.ml,nodes.cf.hi,
+    nodes.poa.lo,nodes.poa.ml,nodes.poa.hi,
+    nodes.tcap.lo,nodes.tcap.ml,nodes.tcap.hi,
+    nodes.rs.lo,nodes.rs.ml,nodes.rs.hi,
+    nodes.pl.lo,nodes.pl.ml,nodes.pl.hi,
+    nodes.slef.lo,nodes.slef.ml,nodes.slef.hi,
+    nodes.slm.lo,nodes.slm.ml,nodes.slm.hi,
+    nodes.tef.lo,nodes.tef.ml,nodes.tef.hi,nodes.tef.mode,
+    nodes.vul.lo,nodes.vul.ml,nodes.vul.hi,nodes.vul.mode,
+    nodes.lef.lo,nodes.lef.ml,nodes.lef.hi,nodes.lef.mode,
+    nodes.lm.lo,nodes.lm.ml,nodes.lm.hi,nodes.lm.mode,
+  ]);
+
+  /* derived lef estimate */
+  const lef_derived=nodes.lef.mode==='derived'?(v.tef_m*(vul_pct||0)/100):null;
+  const lef_show=nodes.lef.mode==='direct'?v.lef_ml:lef_derived;
+  const al_e=(lef_show||0)*v.lm_m;
+
   const pm=(lo,ml,hi)=>(lo+4*ml+hi)/6;
 
-  /* Live intermediate estimates (PERT means) */
-  const cf_m  =pm(params.cf.lo,  params.cf.ml,  params.cf.hi);
-  const poa_m =Math.min(1,Math.max(0,pm(params.poa.lo, params.poa.ml, params.poa.hi)));
-  const tef_e =cf_m*poa_m;
-
-  const tc_m  =pm(params.tcap.lo,params.tcap.ml,params.tcap.hi);
-  const rs_m  =pm(params.rs.lo,  params.rs.ml,  params.rs.hi);
-
-  /* Quick 600-iteration MC for Vul% */
-  const vul_pct=useMemo(()=>{
-    let h=0;
-    for(let i=0;i<600;i++){
-      if(pertRv(params.tcap.lo,params.tcap.ml,params.tcap.hi)>
-         pertRv(params.rs.lo,  params.rs.ml,  params.rs.hi))h++;
-    }
-    return Math.round(h/600*100);
-  },[params.tcap,params.rs]);
-
-  const lef_e =tef_e*(vul_pct/100);
-  const pl_m  =pm(params.pl.lo,  params.pl.ml,  params.pl.hi);
-  const slef_m=Math.min(1,Math.max(0,pm(params.slef.lo,params.slef.ml,params.slef.hi)));
-  const slm_m =pm(params.slm.lo, params.slm.ml, params.slm.hi);
-  const lm_e  =pl_m+slef_m*slm_m;
-  const al_e  =lef_e*lm_e;
-
-  const vulState=tc_m>rs_m+0.8?'attacker':rs_m>tc_m+0.8?'defender':'balanced';
-
-  return(
-    <div className="fade">
-      <Hdr n={2} zh="FAIR 參數輸入" en="Parameter Input"
-        desc="依 FAIR 架構逐步輸入各因素的三點估計（最低 / 最可能 / 最高），系統即時顯示中間計算結果。"/>
-      <div style={{background:'#EDE9E2',borderRadius:8,padding:'11px 16px',marginBottom:18,fontSize:12.5,color:C.sub,lineHeight:1.75}}>
-        <strong style={{color:C.txt}}>FAIR 公式：</strong>
-        年度損失 = <span style={{color:C.grn,fontWeight:600}}>LEF</span> × <span style={{color:C.amb,fontWeight:600}}>LM</span>
-        &nbsp;·&nbsp; LEF = (CF × PoA) × P(TCap &gt; RS)
-        &nbsp;·&nbsp; LM = PL + (SLEF × SLM)
-      </div>
-
-      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:18}}>
-
-        {/* ── LEF 頻率分支 ── */}
-        <div>
-          <div style={{fontSize:10.5,letterSpacing:'0.16em',color:C.grn,fontWeight:600,textTransform:'uppercase',marginBottom:11}}>
-            損失事件頻率（Loss Event Frequency, LEF）
-          </div>
-
-          {/* TEF */}
-          <Card title="威脅事件頻率（Threat Event Frequency, TEF）" en="">
-            <div style={{fontSize:12,color:C.sub,background:'#F2EFE8',borderRadius:4,padding:'7px 10px',marginBottom:14,lineHeight:1.6}}>
-              TEF = CF × PoA：每年接觸次數 × 每次接觸後採取行動的機率
-            </div>
-            <PRow k="cf"  val={params.cf}  onChange={upd} mode={mode}/>
-            <PRow k="poa" val={params.poa} onChange={upd} mode={mode}/>
-            {/* TEF live result */}
-            <div style={{background:C.grnL,border:'1px solid #BDCFA0',borderRadius:6,padding:'10px 12px',marginTop:6}}>
-              <div style={{fontSize:10.5,color:C.sub,marginBottom:4}}>⟶ 即時估算 TEF（依最可能值）</div>
-              <div style={{fontSize:12,color:C.sub,marginBottom:3}}>
-                {cf_m.toFixed(1)} 次/年 × {(poa_m*100).toFixed(0)}%
-              </div>
-              <div style={{fontSize:15,fontWeight:500,color:C.grn}}>
-                TEF ≈ <strong>{tef_e.toFixed(2)}</strong> 次/年
-              </div>
-            </div>
-          </Card>
-
-          {/* Vulnerability */}
-          <Card title="脆弱性（Vulnerability, Vul）" en="">
-            <div style={{fontSize:12,color:C.sub,background:'#F2EFE8',borderRadius:4,padding:'7px 10px',marginBottom:14,lineHeight:1.6}}>
-              脆弱性 = P(TCap &gt; RS)：每次模擬各自抽樣，若攻擊方能力超過防禦強度即視為脆弱。不直接輸入脆弱性數值。
-            </div>
-            <PRow k="tcap" val={params.tcap} onChange={upd} mode={mode}/>
-            <PRow k="rs"   val={params.rs}   onChange={upd} mode={mode}/>
-            {/* TCap vs RS visual */}
-            <div style={{background:C.grnL,border:'1px solid #BDCFA0',borderRadius:6,padding:'10px 12px',marginTop:6}}>
-              <div style={{fontSize:10.5,color:C.sub,marginBottom:8}}>⟶ 攻防強度比較 · 即時脆弱性估算（600次抽樣）</div>
-              {/* Bar: TCap */}
-              <div style={{marginBottom:5}}>
-                <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:3}}>
-                  <span style={{fontSize:11,color:'#B04030',minWidth:42,fontWeight:500}}>TCap</span>
-                  <div style={{flex:1,background:C.bdr,borderRadius:3,height:9,position:'relative'}}>
-                    <div style={{width:`${Math.min(100,tc_m/10*100)}%`,background:'#C05040',height:9,borderRadius:3,transition:'width .3s'}}/>
-                  </div>
-                  <span style={{fontSize:11,color:'#B04030',minWidth:28,textAlign:'right'}}>{tc_m.toFixed(1)}</span>
-                </div>
-                {/* Bar: RS */}
-                <div style={{display:'flex',alignItems:'center',gap:6}}>
-                  <span style={{fontSize:11,color:C.grn,minWidth:42,fontWeight:500}}>RS</span>
-                  <div style={{flex:1,background:C.bdr,borderRadius:3,height:9}}>
-                    <div style={{width:`${Math.min(100,rs_m/10*100)}%`,background:C.grn,height:9,borderRadius:3,transition:'width .3s'}}/>
-                  </div>
-                  <span style={{fontSize:11,color:C.grn,minWidth:28,textAlign:'right'}}>{rs_m.toFixed(1)}</span>
-                </div>
-              </div>
-              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:8,paddingTop:8,borderTop:`1px solid #BDCFA0`}}>
-                <div style={{fontSize:12,fontWeight:500,
-                  color:vulState==='attacker'?'#C05040':vulState==='defender'?C.grn:C.amb}}>
-                  {vulState==='attacker'?'⚠ 攻擊方較強':vulState==='defender'?'✓ 防禦方較強':'⚡ 攻防相當'}
-                </div>
-                <div style={{fontSize:14,fontWeight:500,color:C.grn}}>
-                  脆弱性 ≈ <strong>{vul_pct}%</strong>
-                </div>
-              </div>
-            </div>
-            {/* LEF summary */}
-            <div style={{background:'#D8E4C8',border:'1px solid #9EB880',borderRadius:6,padding:'8px 12px',marginTop:6}}>
-              <div style={{fontSize:10.5,color:C.sub,marginBottom:3}}>⟶ LEF 估算 = TEF × Vul</div>
-              <div style={{fontSize:13,color:C.grn,fontWeight:500}}>
-                {tef_e.toFixed(2)} × {vul_pct}% = <strong>{lef_e.toFixed(3)}</strong> 次/年
-              </div>
-            </div>
-          </Card>
-        </div>
-
-        {/* ── LM 損失規模分支 ── */}
-        <div>
-          <div style={{fontSize:10.5,letterSpacing:'0.16em',color:C.amb,fontWeight:600,textTransform:'uppercase',marginBottom:11}}>
-            損失規模（Loss Magnitude, LM）
-          </div>
-
-          <Card title="主要損失（Primary Loss, PL）" en="" accent={true}>
-            <div style={{fontSize:12,color:C.sub,background:'#F2EFE8',borderRadius:4,padding:'7px 10px',marginBottom:14,lineHeight:1.6}}>
-              <strong>損失事件（Loss Event）</strong>直接造成的財務衝擊，例如數據復原、緊急回應費用。<br/>
-              此為損失規模（Loss Magnitude）的直接部分，與損失事件一對一發生。
-            </div>
-            <PRow k="pl" val={params.pl} onChange={upd} mode={mode}/>
-          </Card>
-
-          <Card title="次要損失（Secondary Loss）" en="" accent={true}>
-            <div style={{fontSize:12,color:C.sub,background:'#F2EFE8',borderRadius:4,padding:'7px 10px',marginBottom:14,lineHeight:1.6}}>
-              次要損失規模 = SLEF × SLM，包含監管罰款、客戶賠償、法律費用等間接損失。<br/>
-              <strong>SLEF</strong> 為次要損失事件發生之機率（非頻率），不再額外乘以 LEF，避免重複計算。
-            </div>
-            <PRow k="slef" val={params.slef} onChange={upd} mode={mode}/>
-            <PRow k="slm"  val={params.slm}  onChange={upd} mode={mode}/>
-            {/* LM live result */}
-            <div style={{background:C.ambL,border:'1px solid #DEC98A',borderRadius:6,padding:'10px 12px',marginTop:6}}>
-              <div style={{fontSize:10.5,color:C.sub,marginBottom:4}}>⟶ 損失規模（LM）估算 = PL + SLEF × SLM</div>
-              <div style={{fontSize:12,color:C.sub,marginBottom:3}}>
-                {usd(pl_m)} + {(slef_m*100).toFixed(0)}% × {usd(slm_m)}
-              </div>
-              <div style={{fontSize:15,fontWeight:500,color:C.amb}}>
-                LM ≈ <strong>{usd(lm_e)}</strong>
-              </div>
-            </div>
-          </Card>
-
-          {/* Annual loss point estimate */}
-          <div style={{background:'#EDE9E2',border:`1px solid ${C.bdr}`,borderRadius:8,padding:'14px 16px',marginTop:4}}>
-            <div style={{fontSize:11,color:C.sub,marginBottom:5}}>📊 年度損失點估算（最可能值，供參考）</div>
-            <div style={{fontSize:11.5,color:C.sub,marginBottom:5}}>
-              LEF × LM = {lef_e.toFixed(3)} × {usd(lm_e)}
-            </div>
-            <div style={{fontSize:18,fontWeight:500,color:C.txt}}>≈ <strong>{usd(al_e)}</strong></div>
-            <div style={{fontSize:10,color:C.fnt,marginTop:4,lineHeight:1.6}}>
-              此為點估算，不含不確定性範圍。蒙地卡羅模擬將輸出完整機率分佈（含 P50、P90、P95）。
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div style={{marginTop:20,display:'flex',justifyContent:'space-between'}}>
-        <Btn ch="← 返回" onClick={back} v="ghost"/>
-        <Btn ch="下一步：執行模擬 →" onClick={next}/>
-      </div>
-    </div>
-  );
-}
-
-/* ═══════════════════════════════════════════════════
-   STEP 2 — MONTE CARLO SIMULATION
-═══════════════════════════════════════════════════ */
-function S2({simming,runSim,back}){
-  return(
-    <div className="fade">
-      <Hdr n={3} zh="蒙地卡羅模擬" en="Monte Carlo Simulation"
-        desc="系統將執行 10,000 次隨機迭代，對每個 FAIR 參數從 Beta-PERT 分佈抽樣，計算年度損失的完整機率分佈。"/>
-      <div style={{background:C.surf,border:`1px solid ${C.bdr}`,borderRadius:8,padding:'38px 28px',textAlign:'center',marginBottom:22}}>
-        <div style={{fontSize:40,marginBottom:16}}>⚙</div>
-        <h3 style={{fontSize:17,fontWeight:400,color:C.txt,marginBottom:10}}>準備執行蒙地卡羅模擬</h3>
-        <p style={{fontSize:13,color:C.sub,marginBottom:26,lineHeight:1.8,maxWidth:460,margin:'0 auto 26px'}}>
-          每次迭代對 7 個 FAIR 參數進行 Beta-PERT 分佈抽樣，
-          按照 FAIR 公式計算 LEF × LM 年度損失，共執行 <strong>10,000 次</strong>，輸出機率分佈統計。
-        </p>
-        <div style={{display:'flex',flexWrap:'wrap',gap:8,justifyContent:'center',marginBottom:30}}>
-          {['① CF × PoA → TEF','② P(TCap > RS) → Vul','③ TEF × Vul → LEF','④ PL + SLEF×SLM → LM','⑤ LEF × LM → 年損失'].map(t=>(
-            <span key={t} style={{background:C.grnL,color:C.grn,padding:'5px 14px',borderRadius:20,fontSize:12,border:'1px solid #BDCFA0'}}>{t}</span>
-          ))}
-        </div>
-        <Btn ch={simming?'⏳ 模擬執行中...':'▶  開始模擬  (N = 10,000)'} onClick={runSim} disabled={simming}
-          style={{padding:'13px 38px',fontSize:15}}/>
-      </div>
-      <Btn ch="← 返回" onClick={back} v="ghost"/>
-    </div>
-  );
-}
-
-/* ═══════════════════════════════════════════════════
-   STEP 3 — RESULTS
-═══════════════════════════════════════════════════ */
-function S3({res,sc,params,mode,back}){
-  const hist=useMemo(()=>mkHist(res.raw),[res]);
-  const exc =useMemo(()=>mkExc(res.raw), [res]);
-
-  const TT1=({active,payload})=>!active||!payload?.length?null:(
-    <div style={{background:'white',border:`1px solid ${C.bdr}`,padding:'8px 12px',borderRadius:4,fontSize:12}}>
-      <div style={{color:C.sub}}>{usd(payload[0].payload.x)}</div>
-      <div><strong>{payload[0].value.toLocaleString()}</strong> 次模擬</div>
-    </div>
-  );
-  const TT2=({active,payload})=>!active||!payload?.length?null:(
-    <div style={{background:'white',border:`1px solid ${C.bdr}`,padding:'8px 12px',borderRadius:4,fontSize:12}}>
-      <div style={{color:C.sub}}>損失: {usd(payload[0].payload.loss)}</div>
-      <div>超越機率: <strong>{payload[0].payload.pct.toFixed(1)}%</strong></div>
-    </div>
-  );
-
-  const metrics=[
-    {zh:'預期年度損失',   en:'Expected Annual Loss', val:usd(res.mean),note:'均值 Mean — 非最可能發生值',hi:true},
-    {zh:'P50 中位數損失', en:'50th Percentile',       val:usd(res.p50), note:'50% 機率低於此值'},
-    {zh:'P90 高風險損失', en:'90th Percentile',       val:usd(res.p90), note:'90% 機率低於此值'},
-    {zh:'P95 尾端風險',  en:'95th Percentile',       val:usd(res.p95), note:'尾端風險 — 發生機率低但影響重大'},
-  ];
-  const interp=[
-    {zh:`預期年度損失（均值 Mean）約 ${usd(res.mean)}。此數值為所有模擬情境的平均，不代表最可能發生的損失金額。`,
-     en:`Expected annual loss (Mean) is approximately ${usd(res.mean)}. Note: this is the average across all simulations, not the most likely outcome.`},
-    {zh:`在 ${res.N.toLocaleString()} 次模擬中，約 ${res.pLoss}% 的情境產生非零損失（即損失事件實際發生）。`,
-     en:`In ${res.N.toLocaleString()} simulations, approximately ${res.pLoss}% of scenarios produced a non-zero loss.`},
-    {zh:`90% 機率下，年度損失不超過 ${usd(res.p90)}（P90 信心水準）。`,
-     en:`There is a 90% probability that annual loss will not exceed ${usd(res.p90)}.`},
-    {zh:`極端情境（P99）損失估計可達 ${usd(res.p99)}。此為尾端風險（Tail Risk），發生機率極低但影響重大，建議列入壓力測試情境。`,
-     en:`In extreme scenarios (P99), loss could reach approximately ${usd(res.p99)}. This represents Tail Risk — low probability but high impact.`},
-  ];
-
-  const paramSummary=[
-    {label:'接觸頻率（CF）',         val:`${params.cf.lo}–${params.cf.hi} 次/年`},
-    {label:'採取行動機率（PoA）',     val:`${params.poa.lo}–${params.poa.hi}`},
-    {label:'威脅能力（TCap）',        val:`${params.tcap.lo}–${params.tcap.hi} / 10`},
-    {label:'抵抗強度（RS）',          val:`${params.rs.lo}–${params.rs.hi} / 10`},
-    {label:'主要損失（PL）',          val:`${usd(params.pl.lo)}–${usd(params.pl.hi)}`},
-    {label:'次要損失事件頻率（SLEF）', val:`${params.slef.lo}–${params.slef.hi}`},
-    {label:'次要損失規模（SLM）',     val:`${usd(params.slm.lo)}–${usd(params.slm.hi)}`},
-  ];
-
-  return(
-    <div className="fade print-page">
-      <Hdr n={4} zh="分析結果" en="Risk Quantification Results"
-        desc={`基於 ${res.N.toLocaleString()} 次蒙地卡羅模擬的年度損失機率分佈。在所有情境中，約 ${res.pLoss}% 產生非零損失。`}/>
-
-      {/* Metric Cards */}
-      <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:11,marginBottom:20}}>
-        {metrics.map((m,i)=>(
-          <div key={i} style={{background:i===0?C.grn:C.surf,border:`1px solid ${i===0?C.grn:C.bdr}`,borderRadius:8,padding:'14px 12px'}}>
-            <div style={{fontSize:11,color:i===0?'rgba(255,255,255,.65)':C.fnt,marginBottom:3}}>{m.zh}</div>
-            {mode==='professional'&&<div style={{fontSize:10,color:i===0?'rgba(255,255,255,.4)':C.fnt,marginBottom:7}}>{m.en}</div>}
-            <div style={{fontSize:21,fontWeight:500,color:i===0?'white':C.txt,letterSpacing:'-.01em',marginBottom:3}}>{m.val}</div>
-            <div style={{fontSize:11,color:i===0?'rgba(255,255,255,.55)':C.sub}}>{m.note}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* Charts */}
-      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14,marginBottom:20}}>
-        <div style={{background:C.surf,border:`1px solid ${C.bdr}`,borderRadius:8,padding:16}}>
-          <div style={{fontSize:13,fontWeight:500,marginBottom:2}}>損失分佈直方圖</div>
-          <div style={{fontSize:11,color:C.sub,marginBottom:12}}>Loss Distribution Histogram（僅顯示損失 &gt; 0 情境）</div>
-          <SvgHistogram data={hist} mean={res.mean}/>
-          <div style={{fontSize:11,color:C.sub,marginTop:6,display:'flex',alignItems:'center',gap:6}}>
-            <span style={{display:'inline-block',width:18,borderTop:`2px dashed ${C.amb}`}}></span>
-            均值 {usd(res.mean)}
-          </div>
-        </div>
-
-        <div style={{background:C.surf,border:`1px solid ${C.bdr}`,borderRadius:8,padding:16}}>
-          <div style={{fontSize:13,fontWeight:500,marginBottom:2}}>損失超越機率曲線</div>
-          <div style={{fontSize:11,color:C.sub,marginBottom:12}}>Loss Exceedance Curve</div>
-          <SvgExceedance data={exc}/>
-          <div style={{fontSize:11,color:C.sub,marginTop:6}}>縱軸：「超過該損失值」的機率 · 橫軸：年度損失金額</div>
-        </div>
-      </div>
-
-      {/* Business Interpretation */}
-      <div style={{background:C.grnL,border:'1px solid #BDCFA0',borderRadius:8,padding:18,marginBottom:16}}>
-        <div style={{fontSize:13,fontWeight:500,color:C.grn,marginBottom:12}}>📋 業務解讀 Business Interpretation</div>
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
-          {interp.map((item,i)=>(
-            <div key={i} style={{fontSize:13,color:C.txt,lineHeight:1.8}}>
-              · {item.zh}
-              {mode==='professional'&&<div style={{fontSize:11,color:C.sub,fontStyle:'italic',marginTop:1}}>{item.en}</div>}
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Scenario + Parameter summary */}
-      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14,marginBottom:16}}>
-        <div style={{background:C.surf,border:`1px solid ${C.bdr}`,borderRadius:8,padding:16}}>
-          <div style={{fontSize:12.5,fontWeight:500,marginBottom:10}}>場景資訊 Scenario Details</div>
-          {[['資產 Asset',sc.asset],['威脅來源 Threat Actor',sc.actor],['威脅行為 Threat Event',sc.event],['損失事件 Loss Event',sc.loss]].map(([l,v])=>(
-            <div key={l} style={{padding:'7px 0',borderBottom:`1px solid ${C.bdr}`}}>
-              <div style={{fontSize:10.5,color:C.sub,marginBottom:2}}>{l}</div>
-              <div style={{fontSize:12.5}}>{v}</div>
-            </div>
-          ))}
-        </div>
-        <div style={{background:C.surf,border:`1px solid ${C.bdr}`,borderRadius:8,padding:16}}>
-          <div style={{fontSize:12.5,fontWeight:500,marginBottom:10}}>輸入假設 Input Assumptions</div>
-          {paramSummary.map(({label,val})=>(
-            <div key={label} style={{display:'flex',justifyContent:'space-between',padding:'5px 0',borderBottom:`1px solid ${C.bdr}`,fontSize:12}}>
-              <span style={{color:C.sub}}>{label}</span>
-              <span style={{color:C.txt,fontWeight:500}}>{val}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-        <Btn ch="← 重新模擬" onClick={back} v="ghost"/>
-        <div style={{display:'flex',gap:10}}>
-          <Btn ch="🖨 匯出 PDF 報告" onClick={()=>window.print()} v="amber"/>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ═══════════════════════════════════════════════════
-   FAIR TAXONOMY SIDEBAR REFERENCE
-═══════════════════════════════════════════════════ */
-function TaxTree(){
-  // Node definitions: id, label, zh, x, y, color
-  const N={
-    risk: {x:140,y:14, l:'Risk',  zh:'風險',    c:'#3A3A30'},
-    lef:  {x:72, y:56, l:'LEF',   zh:'損失事件頻率', c:C.grn},
-    lm:   {x:210,y:56, l:'LM',    zh:'損失規模', c:C.amb},
-    tef:  {x:36, y:100,l:'TEF',   zh:'威脅事件頻率',c:C.grnM},
-    vul:  {x:108,y:100,l:'Vul',   zh:'脆弱性',  c:C.grnM},
-    pl:   {x:183,y:100,l:'PL',    zh:'主要損失',c:'#C89040'},
-    sl:   {x:237,y:100,l:'SL',    zh:'次要損失',c:'#C89040'},
-    cf:   {x:18, y:146,l:'CF',    zh:'接觸頻率',c:'#8AAA68'},
-    poa:  {x:54, y:146,l:'PoA',   zh:'行動機率',c:'#8AAA68'},
-    tcap: {x:90, y:146,l:'TCap',  zh:'威脅能力',c:'#8AAA68'},
-    rs:   {x:126,y:146,l:'RS',    zh:'抵抗強度',c:'#8AAA68'},
-    slef: {x:220,y:146,l:'SLEF',  zh:'次損頻率',c:'#C8A050'},
-    slm:  {x:254,y:146,l:'SLM',   zh:'次損規模',c:'#C8A050'},
+  /* ── SVG layout ── */
+  const VW=760,VH=420;
+  const NP={
+    risk:[380,58,30],lef:[178,156,24],lm:[562,156,24],
+    tef:[88,260,20],vul:[262,260,20],pl:[460,260,20],sl:[648,260,20],
+    cf:[36,364,16],poa:[136,364,16],tcap:[220,364,16],rs:[304,364,16],
+    slef:[596,364,16],slm:[698,364,16],
   };
-  const edges=[
-    ['risk','lef'],['risk','lm'],
-    ['lef','tef'],['lef','vul'],
-    ['lm','pl'],['lm','sl'],
-    ['tef','cf'],['tef','poa'],
-    ['vul','tcap'],['vul','rs'],
-    ['sl','slef'],['sl','slm'],
-  ];
-  const ops=[
-    {x:140,y:36,t:'×'},
-    {x:72, y:78,t:'×'},
-    {x:210,y:78,t:'+'},
-    {x:173,y:122,t:'×'},
-  ];
+
+  /* Node metadata */
+  const NM={
+    risk:{zh:'風險',       abbr:'Risk', clr:'#2A2820'},
+    lef: {zh:'損失事件頻率', abbr:'LEF',  clr:'#2C5018'},
+    lm:  {zh:'損失規模',    abbr:'LM',   clr:'#A84810'},
+    tef: {zh:'威脅事件頻率', abbr:'TEF',  clr:'#3A6020'},
+    vul: {zh:'脆弱性',      abbr:'Vul',  clr:'#3A6020'},
+    pl:  {zh:'主要損失',    abbr:'PL',   clr:'#B65018'},
+    sl:  {zh:'次要損失',    abbr:'SL',   clr:'#B65018'},
+    cf:  {zh:'接觸頻率',    abbr:'CF',   clr:'#4E7828'},
+    poa: {zh:'採取行動機率', abbr:'PoA',  clr:'#4E7828'},
+    tcap:{zh:'威脅能力',    abbr:'TCap', clr:'#4E7828'},
+    rs:  {zh:'抵抗強度',    abbr:'RS',   clr:'#4E7828'},
+    slef:{zh:'次損頻率',    abbr:'SLEF', clr:'#C47828'},
+    slm: {zh:'次損規模',    abbr:'SLM',  clr:'#C47828'},
+  };
+
+  /* Display value per node */
+  const NVALS={
+    risk: usd(al_e),
+    lef:  nodes.lef.mode==='direct'?pm(nodes.lef.lo,nodes.lef.ml,nodes.lef.hi).toFixed(3)+'/yr'
+          :(lef_derived||0).toFixed(3)+'/yr',
+    lm:   usd(v.lm_m),
+    tef:  nodes.lef.mode==='direct'?'—'
+          :(nodes.tef.mode==='direct'?pm(nodes.tef.lo,nodes.tef.ml,nodes.tef.hi).toFixed(2)+'/yr'
+            :v.tef_m.toFixed(2)+'/yr'),
+    vul:  nodes.lef.mode==='direct'?'—':(vul_pct!=null?vul_pct+'%':'—'),
+    pl:   usd(v.pl_m),
+    sl:   usd(v.slef_m*v.slm_m),
+    cf:   nodes.lef.mode==='direct'||nodes.tef.mode==='direct'?'—':v.cf_m.toFixed(1)+'/yr',
+    poa:  nodes.lef.mode==='direct'||nodes.tef.mode==='direct'?'—':(v.poa_m*100).toFixed(0)+'%',
+    tcap: nodes.lef.mode==='direct'||nodes.vul.mode==='direct'?'—':v.tc_m.toFixed(1)+'/10',
+    rs:   nodes.lef.mode==='direct'||nodes.vul.mode==='direct'?'—':v.rs_m.toFixed(1)+'/10',
+    slef: nodes.lm.mode==='direct'?'—':(v.slef_m*100).toFixed(0)+'%',
+    slm:  nodes.lm.mode==='direct'?'—':usd(v.slm_m),
+  };
+
+  const EDGES=[['risk','lef'],['risk','lm'],['lef','tef'],['lef','vul'],
+    ['lm','pl'],['lm','sl'],['tef','cf'],['tef','poa'],
+    ['vul','tcap'],['vul','rs'],['sl','slef'],['sl','slm']];
+  const GRN=new Set(['lef','tef','vul','cf','poa','tcap','rs']);
+
+  const doClick=(id,e)=>{
+    e.stopPropagation();
+    if(id==='risk'||id==='sl')return; /* not clickable */
+    if(active===id){setActive(null);return;}
+    const el=svgRef.current;if(!el)return;
+    const r=el.getBoundingClientRect();
+    const[nx,ny,nr]=NP[id];
+    const sx=r.width/VW,sy=r.height/VH;
+    const PW=268;
+    let px=(nx-PW/2)*sx;
+    let py=(ny+nr+10)*sy;
+    px=Math.max(4,Math.min(px,r.width-PW-4));
+    if(py+260>r.height)py=Math.max(4,(ny-nr-270)*sy);
+    setPanelPos({left:px,top:py});
+    setActive(id);
+  };
+
+  const updNode=(k,f,val)=>{
+    setNodes(n=>({...n,[k]:{...n[k],[f]:parseFloat(val)||0}}));
+  };
+  const setMode=(k,m)=>{
+    setNodes(n=>({...n,[k]:{...n[k],mode:m}}));
+    /* clear active to force re-open with new mode UI */
+    setActive(null);
+    setTimeout(()=>setActive(k),10);
+  };
+
+  const an=active?NM[active]:null;
+  const eff=active?nodeEffective(active,nodes):null;
+  const isSwitchable=active?SWITCHABLE.has(active):false;
+  const activeMode=active&&nodes[active]?nodes[active].mode:null;
+  const vulSt=v.tc_m>v.rs_m+0.5?'attacker':v.rs_m>v.tc_m+0.5?'defender':'balanced';
+
+  /* Node ring color based on effective mode */
+  const nodeRingClr=(id)=>{
+    const ef=nodeEffective(id,nodes);
+    if(ef==='info')return '#C8C4BC';
+    if(SWITCHABLE.has(id)&&nodes[id]&&nodes[id].mode==='direct')return NM[id].clr;
+    return NM[id].clr;
+  };
+
   return(
-    <div style={{marginTop:22,paddingTop:16,borderTop:`1px solid ${C.bdr}`}}>
-      <div style={{fontSize:10,letterSpacing:'0.13em',color:C.fnt,textTransform:'uppercase',marginBottom:8}}>FAIR 架構</div>
-      <svg width="100%" viewBox="0 0 280 172" style={{overflow:'visible'}}>
-        {/* edges */}
-        {edges.map(([a,b])=>{
-          const A=N[a],B=N[b];
-          return <line key={a+b} x1={A.x} y1={A.y+8} x2={B.x} y2={B.y-8}
-            stroke={C.bdr} strokeWidth={1}/>;
-        })}
-        {/* operator badges */}
-        {ops.map(({x,y,t})=>(
-          <g key={x+y}>
-            <circle cx={x} cy={y} r={6} fill={C.bg} stroke={C.bdr} strokeWidth={0.8}/>
-            <text x={x} y={y+3} textAnchor="middle" fontSize={7} fill={C.sub} fontFamily="monospace">{t}</text>
-          </g>
-        ))}
-        {/* nodes */}
-        {Object.entries(N).map(([id,{x,y,l,zh,c}])=>{
-          const isLeaf=y>130;
-          return(
-            <g key={id}>
-              <circle cx={x} cy={y} r={isLeaf?6:8} fill={c} opacity={0.9}/>
-              <text x={x} y={isLeaf?y-9:y+18} textAnchor="middle"
-                fontSize={isLeaf?6:6.5} fontWeight="600" fill={c} fontFamily="monospace"
-                style={{letterSpacing:'0.02em'}}>{l}</text>
-              {!isLeaf&&<text x={x} y={y+26} textAnchor="middle"
-                fontSize={5} fill={C.fnt}>{zh}</text>}
-            </g>
-          );
-        })}
-      </svg>
-      <div style={{fontSize:9,color:C.fnt,marginTop:4,lineHeight:1.6}}>
-        <span style={{color:C.grn,fontWeight:600}}>■</span> 頻率分支 &nbsp;
-        <span style={{color:C.amb,fontWeight:600}}>■</span> 損失分支
+    <div onClick={()=>setActive(null)}>
+      {/* Mode legend */}
+      <div style={{display:'flex',gap:14,marginBottom:8,alignItems:'center',
+        fontSize:10.5,fontFamily:'Inter,sans-serif',color:C.sub}}>
+        <div style={{display:'flex',alignItems:'center',gap:5}}>
+          <div style={{width:10,height:10,borderRadius:'50%',background:C.grn}}/>
+          <span>直接估計（Direct）</span>
+        </div>
+        <div style={{display:'flex',alignItems:'center',gap:5}}>
+          <div style={{width:10,height:10,borderRadius:'50%',background:'white',
+            border:`2px solid ${C.grn}`}}/>
+          <span>分解估計（Derived）</span>
+        </div>
+        <div style={{display:'flex',alignItems:'center',gap:5}}>
+          <div style={{width:10,height:10,borderRadius:'50%',background:'#E0DDD6'}}/>
+          <span>資訊參考（由父節點直接估計）</span>
+        </div>
+        <span style={{marginLeft:'auto',color:C.fnt,fontSize:10}}>
+          ✦ 點擊可切換直接 / 分解估計模式
+        </span>
       </div>
-    </div>
-  );
-}
 
-/* ═══════════════════════════════════════════════════
-   MAIN APPLICATION
-═══════════════════════════════════════════════════ */
-function App(){
-  const [step,setStep]=useState(0);
-  const [mode,setMode]=useState('professional');
-  const [sc,setSc]=useState({asset:'',actor:'',event:'',loss:''});
-  const [params,setParams]=useState(DEF);
-  const [res,setRes]=useState(null);
-  const [simming,setSimming]=useState(false);
-
-  const upd=useCallback((k,f,v)=>{
-    setParams(p=>({...p,[k]:{...p[k],[f]:parseFloat(v)||0}}));
-  },[]);
-
-  const runSim=useCallback(()=>{
-    setSimming(true);
-    setTimeout(()=>{
-      try{setRes(runMC(params,10000));setStep(3);}
-      finally{setSimming(false);}
-    },80);
-  },[params]);
-
-  const NAV=[
-    {zh:'場景定義',en:'Scenario'},
-    {zh:'參數輸入',en:'Parameters'},
-    {zh:'執行模擬',en:'Simulate'},
-    {zh:'分析結果',en:'Results'},
-  ];
-
-  return(
-    <div style={{fontFamily:"'Noto Serif TC','serif'",background:C.bg,minHeight:'100vh',color:C.txt}}>
-
-      {/* ── HEADER ── */}
-      <header className="no-print" style={{
-        background:'#FAFAF7',borderBottom:`1px solid ${C.bdr}`,
-        padding:'12px 28px',display:'flex',justifyContent:'space-between',alignItems:'center',
-      }}>
-        <div>
-          <div style={{fontSize:9.5,letterSpacing:'0.22em',color:C.fnt,textTransform:'uppercase'}}>Factor Analysis of Information Risk</div>
-          <div style={{fontSize:19,fontWeight:500,letterSpacing:'0.02em',marginTop:2}}>FAIR 風險量化分析系統</div>
-        </div>
-        <div style={{display:'flex',gap:6,alignItems:'center'}}>
-          <span style={{fontSize:12,color:C.sub,marginRight:4}}>顯示模式</span>
-          {['beginner','professional'].map(m=>(
-            <button key={m} onClick={()=>setMode(m)} style={{
-              padding:'5px 14px',borderRadius:20,fontSize:12,cursor:'pointer',fontFamily:'inherit',transition:'all .15s',
-              border:`1px solid ${mode===m?C.grn:C.bdr}`,background:mode===m?C.grn:'white',color:mode===m?'white':C.sub,
-            }}>{m==='beginner'?'入門':'專業'}</button>
+      <div style={{position:'relative',background:'#F0EDE6',borderRadius:8,
+        border:`1px solid ${C.bdr}`,marginBottom:10}}>
+        <svg ref={svgRef} width="100%" viewBox={`0 0 ${VW} ${VH}`} style={{display:'block'}}>
+          <defs>
+            <pattern id="fpg2" width="36" height="36" patternUnits="userSpaceOnUse">
+              <path d="M36 0L0 0 0 36" fill="none" stroke="#E6E2DA" strokeWidth="0.5"/>
+            </pattern>
+            <radialGradient id="fbg1b" cx="24%" cy="60%" r="44%">
+              <stop offset="0%" stopColor="#507030" stopOpacity="0.06"/>
+              <stop offset="100%" stopColor="#507030" stopOpacity="0"/>
+            </radialGradient>
+            <radialGradient id="fbg2b" cx="76%" cy="60%" r="44%">
+              <stop offset="0%" stopColor="#C07020" stopOpacity="0.06"/>
+              <stop offset="100%" stopColor="#C07020" stopOpacity="0"/>
+            </radialGradient>
+          </defs>
+          <rect width={VW} height={VH} fill="url(#fpg2)"/>
+          <rect width={VW} height={VH} fill="url(#fbg1b)"/>
+          <rect width={VW} height={VH} fill="url(#fbg2b)"/>
+          {[48,72,98].map((r,i)=>(
+            <circle key={r} cx={380} cy={58} r={r} fill="none" stroke="#D4D0C8"
+              strokeWidth="0.5" strokeDasharray={i===0?"4 6":"2 10"} opacity="0.45"/>
           ))}
-        </div>
-      </header>
+          <line x1={380} y1={92} x2={380} y2={412}
+            stroke="#CCCAC0" strokeWidth="0.5" strokeDasharray="3 8" opacity="0.4"/>
+          <text x={182} y={128} textAnchor="middle" fontSize="7" fill="#2C5018"
+            fontWeight="700" letterSpacing="0.14em" fontFamily="monospace" opacity="0.6">FREQUENCY</text>
+          <text x={562} y={128} textAnchor="middle" fontSize="7" fill="#A84810"
+            fontWeight="700" letterSpacing="0.14em" fontFamily="monospace" opacity="0.6">LOSS</text>
 
-      <div style={{display:'flex',maxWidth:1080,margin:'0 auto',padding:'26px 20px',gap:26}}>
+          {/* Edges — gray out when parent is in direct mode */}
+          {EDGES.map(([a,b])=>{
+            const [ax,ay,ar]=NP[a],[bx,by,br]=NP[b];
+            const ef=nodeEffective(b,nodes);
+            const grn=GRN.has(b)||(a==='risk'&&b==='lef');
+            const dimmed=ef==='info';
+            return <line key={a+b} x1={ax} y1={ay+ar} x2={bx} y2={by-br}
+              stroke={dimmed?'rgba(180,176,170,0.25)'
+                :grn?'rgba(55,90,35,0.2)':'rgba(155,68,14,0.2)'}
+              strokeWidth={dimmed?1:1.5}
+              strokeDasharray={dimmed?"4 4":"none"}/>;
+          })}
 
-        {/* ── LEFT NAV ── */}
-        <nav className="no-print" style={{width:170,flexShrink:0}}>
-          <div style={{position:'sticky',top:24}}>
-            {NAV.map((n,i)=>{
-              const act=step===i,done=step>i;
+          {/* Vul bar (only when both lef and vul are derived) */}
+          {nodes.lef.mode==='derived'&&nodes.vul.mode==='derived'&&(
+            <g>
+              <rect x={200} y={304} width={120} height={6} rx={3} fill="#E8E4DC" stroke="#D0CCC4" strokeWidth="0.5"/>
+              <rect x={201} y={305} width={Math.min(118,v.tc_m/10*118)} height={4} rx={2} fill="rgba(175,48,30,0.55)"/>
+              <rect x={201} y={305} width={Math.min(118,v.rs_m/10*118)} height={4} rx={2} fill="rgba(48,84,26,0.5)"/>
+              <text x={260} y={320} textAnchor="middle" fontSize="7" fill="#686460" fontFamily="monospace">
+                {`Vul≈${vul_pct}% ${vulSt==='attacker'?'⚠攻>守':vulSt==='defender'?'✓守>攻':'⚡均衡'}`}
+              </text>
+            </g>
+          )}
+
+          {/* Nodes */}
+          {Object.entries(NM).map(([id,nm])=>{
+            const[nx,ny,nr]=NP[id];
+            const isAct=active===id;
+            const ef=nodeEffective(id,nodes);
+            const isDirect=ef==='direct'||(nodes[id]&&nodes[id].mode==='direct'&&ef!=='info');
+            const isInfo=ef==='info';
+            const isSw=SWITCHABLE.has(id);
+            const clk=id!=='risk'&&id!=='sl';
+            /* color */
+            const clr=isInfo?'#C8C4BC':nm.clr;
+            return(
+              <g key={id} onClick={e=>clk&&doClick(id,e)}
+                style={{cursor:clk?'pointer':'default'}}>
+                {/* active ring */}
+                {isAct&&<circle cx={nx} cy={ny} r={nr+7}
+                  fill={clr} fillOpacity="0.12"
+                  stroke={clr} strokeOpacity="0.4" strokeWidth="1.2"/>}
+                {/* mode indicator ring for switchable nodes */}
+                {isSw&&!isAct&&!isInfo&&<circle cx={nx} cy={ny} r={nr+5}
+                  fill={clr} fillOpacity={isDirect?0.06:0.04}
+                  stroke={clr} strokeOpacity="0.25"
+                  strokeWidth="0.8" strokeDasharray={isDirect?"none":"3 4"}/>}
+                {/* Node body */}
+                <circle cx={nx} cy={ny} r={nr}
+                  fill={isDirect?clr:'white'}
+                  stroke={clr} strokeWidth={isDirect?0:1.4}
+                  opacity={isInfo?0.45:isDirect?1:0.9}/>
+                {/* Abbr */}
+                <text x={nx} y={ny+(nr>26?3:2.5)} textAnchor="middle"
+                  fontSize={nr>26?9.5:nr>18?8:7.5}
+                  fontWeight="700" fontFamily="monospace"
+                  fill={isDirect&&!isInfo?'white':(isInfo?'#C8C4BC':nm.clr)}>{nm.abbr}</text>
+                {/* Value */}
+                <text x={nx} y={ny+nr+11} textAnchor="middle"
+                  fontSize="7.5" fill={isInfo?'#C8C4BC':nm.clr} fontWeight="500"
+                  opacity={isInfo?0.6:1}>{NVALS[id]}</text>
+                {/* Label */}
+                <text x={nx} y={ny+nr+19} textAnchor="middle"
+                  fontSize="6" fill={isInfo?'#BEBAB0':'#9A9690'}>{nm.zh}</text>
+                {/* D badge for direct switchable nodes */}
+                {isSw&&isDirect&&!isInfo&&(
+                  <g>
+                    <circle cx={nx+nr} cy={ny-nr} r={5.5} fill={clr} stroke="white" strokeWidth="1"/>
+                    <text x={nx+nr} y={ny-nr+2.5} textAnchor="middle"
+                      fontSize="6" fill="white" fontWeight="700">D</text>
+                  </g>
+                )}
+                {/* edit dot for leaf direct nodes */}
+                {!isSw&&isDirect&&!isInfo&&!isAct&&(
+                  <circle cx={nx+nr-1} cy={ny-nr+1} r={2.5}
+                    fill="white" fillOpacity="0.88"/>
+                )}
+              </g>
+            );
+          })}
+        </svg>
+
+        {/* ── Floating Panel ── */}
+        {active&&an&&(
+          <div onClick={e=>e.stopPropagation()} style={{
+            position:'absolute',left:panelPos.left,top:panelPos.top,
+            width:268,background:'white',
+            border:`1.5px solid ${nodeRingClr(active)}55`,
+            borderRadius:10,padding:'14px 16px',
+            boxShadow:'0 8px 32px rgba(0,0,0,0.13)',zIndex:30}}>
+
+            {/* Header */}
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:10}}>
+              <div>
+                <div style={{fontSize:12.5,fontWeight:600,color:an.clr}}>{an.zh}</div>
+                <div style={{fontSize:9,color:C.fnt,marginTop:1,fontFamily:'Inter,sans-serif'}}>
+                  {an.abbr} · {eff==='info'?'資訊參考':'可輸入'}
+                </div>
+              </div>
+              <button onClick={()=>setActive(null)} style={{
+                background:'none',border:'none',cursor:'pointer',
+                fontSize:17,color:C.fnt,padding:0,lineHeight:1,marginLeft:6}}>×</button>
+            </div>
+
+            {/* Info-mode locked message */}
+            {eff==='info'&&(
+              <div style={{padding:'10px 12px',background:'#F6F4EF',borderRadius:6,
+                fontSize:11.5,color:C.sub,lineHeight:1.6,fontFamily:'Inter,sans-serif',
+                borderLeft:`3px solid #C8C4BC`}}>
+                父節點已設為直接估計，此節點不參與計算。
+                <br/>若需啟用，請將父節點切換為「分解估計」。
+              </div>
+            )}
+
+            {/* Mode switch for switchable nodes */}
+            {isSwitchable&&eff!=='info'&&(
+              <div style={{marginBottom:12}}>
+                <div style={{fontSize:9,fontWeight:600,color:C.fnt,letterSpacing:'0.1em',
+                  textTransform:'uppercase',marginBottom:6,fontFamily:'Inter,sans-serif'}}>
+                  估計模式
+                </div>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6}}>
+                  {[['direct','直接估計','Direct'],['derived','分解估計','Derived']].map(([m,zh,en])=>(
+                    <div key={m} onClick={()=>setMode(active,m)}
+                      style={{padding:'8px 10px',borderRadius:5,cursor:'pointer',
+                        border:`2px solid ${activeMode===m?an.clr:C.bdr}`,
+                        background:activeMode===m?an.clr+'14':'white',
+                        transition:'all .12s'}}>
+                      <div style={{fontSize:11.5,fontWeight:600,
+                        color:activeMode===m?an.clr:C.txt,fontFamily:'Inter,sans-serif'}}>{zh}</div>
+                      <div style={{fontSize:9.5,color:C.fnt,fontFamily:'Inter,sans-serif'}}>{en}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Direct mode: 3-point input */}
+            {eff!=='info'&&activeMode==='direct'&&nodes[active]&&(()=>{
+              const t=TERMS[active];
+              const isUSD=t?t.unit==='USD':false;
+              const isProb=t&&t.unit?t.unit.includes('0–'):false;
+              const step=isUSD?5000:isProb?0.01:0.5;
+              const nd=nodes[active];
               return(
-                <div key={i} onClick={()=>done&&setStep(i)} style={{display:'flex',gap:10,cursor:done?'pointer':'default'}}>
-                  <div style={{display:'flex',flexDirection:'column',alignItems:'center'}}>
-                    <div style={{
-                      width:24,height:24,borderRadius:'50%',flexShrink:0,marginTop:4,
-                      display:'flex',alignItems:'center',justifyContent:'center',
-                      fontSize:11,fontWeight:600,transition:'all .25s',
-                      background:act?C.grn:done?C.grnM:C.bdr,
-                      color:act||done?'white':C.fnt,
-                    }}>{done?'✓':i+1}</div>
-                    {i<NAV.length-1&&<div style={{width:1,height:34,background:done?C.grnM:C.bdr,marginTop:3}}/>}
+                <div>
+                  {t&&<div style={{fontSize:11,color:C.sub,marginBottom:8,lineHeight:1.55,
+                    fontFamily:'Inter,sans-serif'}}>{t.desc}</div>}
+                  {t&&<div style={{fontSize:9.5,color:C.fnt,marginBottom:8,
+                    fontFamily:'Inter,sans-serif'}}>單位：{t.unit}</div>}
+                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:6}}>
+                    {[['lo','最低'],['ml','最可能'],['hi','最高']].map(([f,lbl])=>{
+                      const isML=f==='ml';
+                      return(
+                        <div key={f}>
+                          <div style={{fontSize:9,color:isML?an.clr:C.fnt,marginBottom:3,
+                            textAlign:'center',fontWeight:isML?600:400,
+                            fontFamily:'Inter,sans-serif',textTransform:'uppercase',
+                            letterSpacing:'0.05em'}}>{lbl}</div>
+                          <input type="number" value={nd[f]} step={step}
+                            onChange={e=>updNode(active,f,e.target.value)}
+                            style={{width:'100%',padding:'6px 4px',textAlign:'center',
+                              border:`1.5px solid ${isML?an.clr+'55':C.bdr}`,borderRadius:5,
+                              fontSize:12,fontFamily:'Inter,sans-serif',color:C.txt,
+                              background:isML?`${an.clr}0A`:'#FAFAF7'}}/>
+                        </div>
+                      );
+                    })}
                   </div>
-                  <div style={{paddingBottom:14,paddingTop:4}}>
-                    <div style={{fontSize:13,fontWeight:act?500:400,color:act?C.txt:done?C.grn:C.fnt}}>{n.zh}</div>
-                    <div style={{fontSize:10,color:C.fnt,letterSpacing:'0.05em'}}>{n.en}</div>
+                  <div style={{marginTop:9,display:'flex',justifyContent:'space-between',
+                    alignItems:'center',padding:'7px 10px',
+                    background:`${an.clr}0D`,borderRadius:5}}>
+                    <span style={{fontSize:9.5,color:C.sub,fontFamily:'Inter,sans-serif'}}>
+                      最可能值
+                    </span>
+                    <strong style={{fontSize:13,color:an.clr}}>{NVALS[active]}</strong>
                   </div>
                 </div>
               );
-            })}
-            <TaxTree/>
-          </div>
-        </nav>
+            })()}
 
-        {/* ── MAIN CONTENT ── */}
-        <main style={{flex:1,minWidth:0}}>
-          {step===0&&<S0 sc={sc} setSc={setSc} mode={mode} next={()=>setStep(1)}/>}
-          {step===1&&<S1 params={params} upd={upd} mode={mode} back={()=>setStep(0)} next={()=>setStep(2)}/>}
-          {step===2&&<S2 simming={simming} runSim={runSim} back={()=>setStep(1)}/>}
-          {step===3&&res&&<S3 res={res} sc={sc} params={params} mode={mode} back={()=>setStep(2)}/>}
-        </main>
+            {/* Derived mode: show formula + children active */}
+            {eff!=='info'&&activeMode==='derived'&&(()=>{
+              const formulaMap={
+                lef:'LEF = TEF × 脆弱性',
+                tef:'TEF = CF × PoA',
+                vul:'Vul = P(TCap > RS)',
+                lm: 'LM = PL + SLEF × SLM',
+              };
+              return(
+                <div>
+                  <div style={{padding:'10px 12px',background:C.grnL,
+                    borderRadius:6,marginBottom:10,
+                    borderLeft:`3px solid ${an.clr}`}}>
+                    <div style={{fontSize:9.5,color:C.sub,marginBottom:4,
+                      fontFamily:'Inter,sans-serif',fontWeight:600,
+                      letterSpacing:'0.08em',textTransform:'uppercase'}}>計算公式</div>
+                    <div style={{fontSize:12,color:an.clr,fontFamily:'monospace',
+                      fontWeight:600}}>{formulaMap[active]||'由子節點計算'}</div>
+                  </div>
+                  {/* Vul special: show comparison */}
+                  {active==='vul'&&nodes.lef.mode==='derived'&&(
+                    <div>
+                      {[['TCap','#B03020',v.tc_m],['RS','#305820',v.rs_m]].map(([l,c,val])=>(
+                        <div key={l} style={{display:'flex',gap:7,alignItems:'center',marginBottom:5}}>
+                          <span style={{fontSize:10,color:c,minWidth:30,fontWeight:600,fontFamily:'monospace'}}>{l}</span>
+                          <div style={{flex:1,background:'#EEE',borderRadius:3,height:6}}>
+                            <div style={{width:`${Math.min(100,val/10*100)}%`,height:6,background:c,borderRadius:3}}/>
+                          </div>
+                          <span style={{fontSize:10,color:c}}>{val.toFixed(1)}</span>
+                        </div>
+                      ))}
+                      <div style={{fontSize:11,fontWeight:600,color:
+                        vulSt==='attacker'?'#B03020':vulSt==='defender'?'#305820':'#9E6818',
+                        fontFamily:'Inter,sans-serif',marginTop:4}}>
+                        {vulSt==='attacker'?'⚠ 攻擊方較強':vulSt==='defender'?'✓ 防禦方較強':'⚡ 攻防相當'}
+                      </div>
+                    </div>
+                  )}
+                  <div style={{padding:'10px 12px',background:`${an.clr}0D`,
+                    borderRadius:6,textAlign:'center',marginTop:6}}>
+                    <div style={{fontSize:9.5,color:C.sub,fontFamily:'Inter,sans-serif',marginBottom:2}}>
+                      目前估算值
+                    </div>
+                    <div style={{fontSize:18,fontWeight:700,color:an.clr}}>{NVALS[active]}</div>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+        )}
       </div>
+
+      {/* Formula bar */}
+      <div style={{background:'#E8E5DE',borderRadius:5,padding:'7px 12px',
+        display:'flex',alignItems:'center',flexWrap:'wrap',gap:8,fontSize:11}}>
+        <span style={{color:C.fnt,fontSize:9.5,fontFamily:'Inter,sans-serif',flexShrink:0}}>即時估算</span>
+        {nodes.lef.mode==='direct'?(
+          <span style={{color:'#2C5018',fontFamily:'Inter,sans-serif',fontWeight:500}}>
+            LEF=<strong>{NVALS.lef}</strong>
+            <span style={{fontSize:9,color:C.fnt}}> (直接)</span>
+          </span>
+        ):(
+          <span style={{color:'#2C5018',fontFamily:'Inter,sans-serif',fontWeight:500}}>
+            LEF={NVALS.tef}×{vul_pct}%=<strong>{NVALS.lef}</strong>
+          </span>
+        )}
+        <span style={{color:C.bdr}}>·</span>
+        {nodes.lm.mode==='direct'?(
+          <span style={{color:'#A84810',fontFamily:'Inter,sans-serif',fontWeight:500}}>
+            LM=<strong>{usd(v.lm_m)}</strong>
+            <span style={{fontSize:9,color:C.fnt}}> (直接)</span>
+          </span>
+        ):(
+          <span style={{color:'#A84810',fontFamily:'Inter,sans-serif',fontWeight:500}}>
+            LM={usd(v.pl_m)}+{(v.slef_m*100).toFixed(0)}%×{usd(v.slm_m)}=<strong>{usd(v.lm_m)}</strong>
+          </span>
+        )}
+        <span style={{color:C.bdr}}>·</span>
+        <strong style={{color:C.txt,fontFamily:'Inter,sans-serif'}}>年損失≈{usd(al_e)}</strong>
+        <span style={{marginLeft:'auto',display:'flex',gap:10,fontSize:9.5,
+          color:C.fnt,fontFamily:'Inter,sans-serif',flexShrink:0,alignItems:'center'}}>
+          <span><span style={{fontWeight:700,color:C.grn}}>●</span> Direct</span>
+          <span><span style={{fontWeight:700,color:'white',
+            textShadow:`0 0 0 1px ${C.grn}`}}>○</span> Derived</span>
+          <span><span style={{fontWeight:700,color:'#C8C4BC'}}>●</span> Info</span>
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════
+   NEW RISK PANEL (slide-in)
+═══════════════════════════════════════════════════ */
+/* ScenarioField: dropdown + custom text input combo */
+function ScenarioField({label,fieldKey,value,opts,onChange}){
+  const isCustom=value!==''&&!opts.includes(value);
+  const[showCustom,setShowCustom]=useState(isCustom);
+  const handleSelect=e=>{
+    if(e.target.value==='__custom__'){
+      setShowCustom(true);
+      onChange('');
+    } else {
+      setShowCustom(false);
+      onChange(e.target.value);
+    }
+  };
+  const selectVal=showCustom?'__custom__':value;
+  return(
+    <div>
+      <div style={{fontSize:11,color:C.sub,marginBottom:5,fontFamily:'Inter,sans-serif'}}>{label}</div>
+      <select value={selectVal} onChange={handleSelect} style={{
+        width:'100%',padding:'8px 10px',border:`1px solid ${C.bdr}`,
+        borderRadius:3,fontSize:13,fontFamily:'Inter,sans-serif',
+        color:selectVal?C.txt:C.fnt,background:C.surf,
+        cursor:'pointer',appearance:'auto',
+        marginBottom:showCustom?6:0}}>
+        <option value="">— 請選擇 —</option>
+        {opts.map(o=><option key={o} value={o}>{o}</option>)}
+        <option value="__custom__">✏ 自行輸入…</option>
+      </select>
+      {showCustom&&(
+        <div style={{position:'relative'}}>
+          <input
+            autoFocus
+            type="text"
+            value={value}
+            onChange={e=>onChange(e.target.value)}
+            placeholder={`輸入自訂${label.replace(' *','')}…`}
+            style={{width:'100%',padding:'8px 32px 8px 10px',
+              border:`1.5px solid ${C.grn}`,borderRadius:3,
+              fontSize:13,fontFamily:'Inter,sans-serif',
+              color:C.txt,background:C.grnL}}
+          />
+          <button
+            onClick={()=>{setShowCustom(false);onChange('');}}
+            style={{position:'absolute',right:8,top:'50%',transform:'translateY(-50%)',
+              background:'none',border:'none',cursor:'pointer',
+              fontSize:14,color:C.fnt,lineHeight:1,padding:0}}>×</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function NewRiskPanel({onSave,onClose}){
+  const[form,setForm]=useState({name:'',asset:'',actor:'',event:'',loss:'',owner:'',priority:''});
+  const upd=(k,v)=>setForm(f=>({...f,[k]:v}));
+  const ok=form.asset&&form.asset.trim()&&
+           form.actor&&form.actor.trim()&&
+           form.event&&form.event.trim()&&
+           form.loss&&form.loss.trim()&&
+           form.owner&&form.owner.trim();
+  const save=()=>{
+    const name=form.name.trim()||`${form.actor} → ${form.asset}`;
+    onSave({...newRisk(),name,owner:form.owner,priority:form.priority||'medium',
+      scenario:{asset:form.asset,actor:form.actor,event:form.event,
+        loss:form.loss,concern:'',assumptions:''},
+    });
+  };
+  const scFields=[
+    {k:'asset',label:'受影響資產 *',opts:OPTS.assets},
+    {k:'actor',label:'威脅來源 *',  opts:OPTS.actors},
+    {k:'event',label:'威脅行為 *',  opts:OPTS.events},
+    {k:'loss', label:'損失事件 *',  opts:OPTS.losses},
+  ];
+  return(
+    <div style={{position:'fixed',inset:0,zIndex:200,display:'flex'}}>
+      <div onClick={onClose} style={{flex:1,background:'rgba(0,0,0,0.3)'}}/>
+      <div className="fade" style={{width:440,background:C.surf,overflowY:'auto',
+        padding:28,display:'flex',flexDirection:'column',gap:14,
+        boxShadow:'-4px 0 28px rgba(0,0,0,0.1)'}}>
+
+        {/* Header */}
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:4}}>
+          <div>
+            <div style={{fontSize:17,fontWeight:500,color:C.txt,fontFamily:'Inter,sans-serif'}}>新增風險</div>
+            <div style={{fontSize:11,color:C.fnt,marginTop:2,fontFamily:'Inter,sans-serif'}}>
+              登記後可進入詳細頁面補充 FAIR 參數與評估
+            </div>
+          </div>
+          <button onClick={onClose} style={{background:'none',border:'none',cursor:'pointer',
+            fontSize:22,color:C.fnt,lineHeight:1,marginLeft:8}}>×</button>
+        </div>
+
+        {/* Risk name */}
+        <div>
+          <div style={{fontSize:11,color:C.sub,marginBottom:5,fontFamily:'Inter,sans-serif'}}>
+            風險名稱 <span style={{color:C.fnt}}>(選填，留空會自動產生)</span>
+          </div>
+          <TInput value={form.name} onChange={e=>upd('name',e.target.value)}
+            placeholder="例：電商平台客戶資料外洩風險"/>
+        </div>
+
+        {/* Scenario fields — each supports custom input */}
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+          {scFields.map(({k,label,opts})=>(
+            <ScenarioField key={k} label={label} fieldKey={k}
+              value={form[k]} opts={opts}
+              onChange={v=>upd(k,v)}/>
+          ))}
+        </div>
+
+        {/* Owner + Priority */}
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+          <div>
+            <div style={{fontSize:11,color:C.sub,marginBottom:5,fontFamily:'Inter,sans-serif'}}>負責人 *</div>
+            <TInput value={form.owner} onChange={e=>upd('owner',e.target.value)} placeholder="例：CISO、IT 主管"/>
+          </div>
+          <div>
+            <div style={{fontSize:11,color:C.sub,marginBottom:5,fontFamily:'Inter,sans-serif'}}>初始優先等級</div>
+            <TSelect value={form.priority} onChange={e=>upd('priority',e.target.value)}
+              options={Object.entries(PRI_CFG).map(([v,p])=>({v,l:p.label}))}
+              placeholder="— 選擇 —"/>
+          </div>
+        </div>
+
+        {/* Preview */}
+        {ok&&(
+          <div style={{padding:'10px 14px',background:'#F6F4EF',
+            borderRadius:3,border:`1px solid ${C.bdr}`,
+            borderLeft:`3px solid ${C.grn}`}}>
+            <div style={{fontSize:10,fontWeight:600,color:C.grn,letterSpacing:'0.1em',
+              textTransform:'uppercase',marginBottom:5,fontFamily:'Inter,sans-serif'}}>場景預覽</div>
+            <p style={{fontSize:12.5,color:C.txt,lineHeight:1.75,fontFamily:'Inter,sans-serif'}}>
+              <strong>{form.actor}</strong>
+              <span style={{color:C.sub}}> 對 </span>
+              <strong>「{form.asset}」</strong>
+              <span style={{color:C.sub}}> 發動 </span>
+              <strong>{form.event}</strong>
+              <span style={{color:C.sub}}>，可能造成 </span>
+              <strong>{form.loss}</strong>。
+            </p>
+          </div>
+        )}
+
+        <div style={{marginTop:4,display:'flex',justifyContent:'flex-end',gap:10}}>
+          <Btn ch="取消" onClick={onClose} v="ghost"/>
+          <Btn ch="新增風險 →" onClick={save} disabled={!ok}/>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════
+   RISK REGISTER (main view)
+═══════════════════════════════════════════════════ */
+function RiskRegister({risks,onOpen,onAdd}){
+  const[filterStatus,setFilterStatus]=useState('');
+  const[filterPri,setFilterPri]=useState('');
+  const[filterOwner,setFilterOwner]=useState('');
+  const[search,setSearch]=useState('');
+
+  const filtered=useMemo(()=>risks.filter(r=>{
+    if(filterStatus&&r.status!==filterStatus)return false;
+    if(filterPri&&r.priority!==filterPri)return false;
+    if(filterOwner&&r.owner!==filterOwner)return false;
+    if(search&&!r.name.toLowerCase().includes(search.toLowerCase())
+      &&!(r.scenario.asset||'').toLowerCase().includes(search.toLowerCase()))return false;
+    return true;
+  }),[risks,filterStatus,filterPri,filterOwner,search]);
+
+  const owners=[...new Set(risks.map(r=>r.owner).filter(Boolean))];
+
+  /* Summary stats */
+  const total=risks.length;
+  const critCount=risks.filter(r=>r.priority==='critical').length;
+  const treatCount=risks.filter(r=>r.status==='in_treatment').length;
+  const overdueCount=risks.filter(r=>
+    r.treatment.dueDate&&isOverdue(r.treatment.dueDate)&&
+    r.treatment.treatStatus!=='completed').length;
+
+  const EAL=r=>r.fairResult?usd(r.fairResult.mean):'—';
+  const P90=r=>r.fairResult?usd(r.fairResult.p90):'—';
+
+  return(
+    <div>
+      {/* Summary bar */}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:10,marginBottom:20}}>
+        {[
+          {n:total,     label:'風險總數',  sub:'登記中',    color:C.txt},
+          {n:critCount, label:'緊急風險',  sub:'需立即處理', color:C.red},
+          {n:treatCount,label:'處理進行中', sub:'待完成',    color:C.grn},
+          {n:overdueCount,label:'逾期應對',sub:'請確認狀態', color:overdueCount>0?C.red:C.fnt},
+        ].map((s,i)=>(
+          <div key={i} style={{background:C.surf,border:`1px solid ${C.bdr}`,
+            borderRadius:4,padding:'14px 16px',
+            borderLeft:`3px solid ${s.color}`}}>
+            <div style={{fontSize:26,fontWeight:600,color:s.n>0&&i>0?s.color:C.txt,
+              fontFamily:'Inter,sans-serif',letterSpacing:'-0.02em',lineHeight:1}}>{s.n}</div>
+            <div style={{fontSize:12,color:C.txt,fontFamily:'Inter,sans-serif',
+              fontWeight:500,marginTop:4}}>{s.label}</div>
+            <div style={{fontSize:10.5,color:C.sub,fontFamily:'Inter,sans-serif',marginTop:1}}>{s.sub}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Filter bar */}
+      <div style={{display:'flex',gap:10,marginBottom:14,alignItems:'center',flexWrap:'wrap'}}>
+        <input value={search} onChange={e=>setSearch(e.target.value)}
+          placeholder="搜尋風險名稱或資產…"
+          style={{padding:'7px 11px',border:`1px solid ${C.bdr}`,borderRadius:3,
+            fontSize:12.5,fontFamily:'Inter,sans-serif',color:C.txt,
+            background:C.surf,width:200}}/>
+        <TSelect value={filterStatus} onChange={e=>setFilterStatus(e.target.value)} sm
+          options={Object.entries(STATUS_CFG).map(([v,s])=>({v,l:s.label}))}
+          placeholder="所有狀態"/>
+        <TSelect value={filterPri} onChange={e=>setFilterPri(e.target.value)} sm
+          options={Object.entries(PRI_CFG).map(([v,p])=>({v,l:p.label}))}
+          placeholder="所有優先等級"/>
+        {owners.length>0&&(
+          <TSelect value={filterOwner} onChange={e=>setFilterOwner(e.target.value)} sm
+            options={owners.map(o=>({v:o,l:o}))} placeholder="所有負責人"/>
+        )}
+        {(filterStatus||filterPri||filterOwner||search)&&(
+          <Btn ch="清除篩選" onClick={()=>{setFilterStatus('');setFilterPri('');setFilterOwner('');setSearch('');}}
+            v="ghost" sm/>
+        )}
+        <div style={{flex:1}}/>
+        <Btn ch="+ 新增風險" onClick={onAdd} v="primary"/>
+      </div>
+
+      {/* Risk table */}
+      {filtered.length===0?(
+        <div style={{textAlign:'center',padding:'52px 20px',color:C.fnt,
+          fontFamily:'Inter,sans-serif',background:C.surf,borderRadius:4,
+          border:`1px solid ${C.bdr}`}}>
+          {risks.length===0?'尚未登記任何風險。點擊「+ 新增風險」開始。':'沒有符合條件的風險。'}
+        </div>
+      ):(
+        <div style={{background:C.surf,border:`1px solid ${C.bdr}`,borderRadius:4,overflow:'hidden'}}>
+          {/* Table header */}
+          <div style={{display:'grid',
+            gridTemplateColumns:'2fr 1.4fr 1fr 1fr 1fr 1fr 0.9fr 0.8fr',
+            padding:'8px 16px',background:'#F6F4EF',
+            borderBottom:`1px solid ${C.bdr}`,
+            fontSize:10.5,fontWeight:600,color:C.fnt,
+            letterSpacing:'0.08em',textTransform:'uppercase',
+            fontFamily:'Inter,sans-serif'}}>
+            {['風險名稱','場景','優先等級','狀態','EAL (均值)','P90 損失','負責人','操作'].map(h=>(
+              <div key={h}>{h}</div>
+            ))}
+          </div>
+          {/* Table rows */}
+          {filtered.map((r,i)=>{
+            const overdue=r.treatment.dueDate&&isOverdue(r.treatment.dueDate)&&
+              r.treatment.treatStatus!=='completed';
+            return(
+              <div key={r.id} style={{
+                display:'grid',
+                gridTemplateColumns:'2fr 1.4fr 1fr 1fr 1fr 1fr 0.9fr 0.8fr',
+                padding:'12px 16px',
+                borderBottom:i<filtered.length-1?`1px solid ${C.bdr}`:'none',
+                alignItems:'start',
+                background:overdue?'#FFF8F6':i%2===0?C.surf:'#FAFAF8',
+                transition:'background .1s',
+              }}
+              onMouseEnter={e=>e.currentTarget.style.background='#F5F2EC'}
+              onMouseLeave={e=>e.currentTarget.style.background=overdue?'#FFF8F6':i%2===0?C.surf:'#FAFAF8'}>
+                {/* Name */}
+                <div style={{paddingRight:8}}>
+                  <div style={{fontSize:13,fontWeight:500,color:C.txt,
+                    fontFamily:'Inter,sans-serif',marginBottom:2,
+                    lineHeight:1.4,wordBreak:'break-word'}}>{r.name||'(未命名)'}</div>
+                  {overdue&&(
+                    <div style={{fontSize:10,color:C.red,fontFamily:'Inter,sans-serif',marginTop:2}}>
+                      ⚠ 應對逾期
+                    </div>
+                  )}
+                </div>
+                {/* Scenario */}
+                <div style={{fontSize:11.5,color:C.sub,fontFamily:'Inter,sans-serif',
+                  lineHeight:1.4,wordBreak:'break-word',paddingRight:6}}>
+                  {[r.scenario.asset,r.scenario.actor].filter(Boolean).join('\n') || '—'}
+                </div>
+                {/* Priority */}
+                <div><PriBadge priority={r.priority} small/></div>
+                {/* Status */}
+                <div><StatusBadge status={r.status} small/></div>
+                {/* EAL */}
+                <div style={{fontSize:12.5,fontWeight:500,
+                  color:r.fairResult?C.txt:C.fnt,fontFamily:'Inter,sans-serif'}}>
+                  {EAL(r)}
+                </div>
+                {/* P90 */}
+                <div style={{fontSize:12.5,color:r.fairResult?C.txt:C.fnt,
+                  fontFamily:'Inter,sans-serif'}}>
+                  {P90(r)}
+                </div>
+                {/* Owner */}
+                <div style={{fontSize:12,color:C.sub,fontFamily:'Inter,sans-serif',
+                  overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                  {r.owner||'—'}
+                </div>
+                {/* Action */}
+                <div>
+                  <Btn ch="開啟 →" onClick={()=>onOpen(r.id)} sm v="outline"/>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════
+   RISK DETAIL — TABS
+═══════════════════════════════════════════════════ */
+
+/* Tab: 概覽 */
+function TabOverview({risk,onUpdate}){
+  const[ed,setEd]=useState({
+    name:risk.name,owner:risk.owner,priority:risk.priority,
+    asset:risk.scenario.asset,actor:risk.scenario.actor,
+    event:risk.scenario.event,loss:risk.scenario.loss,
+    concern:risk.scenario.concern,assumptions:risk.scenario.assumptions,
+  });
+  const save=()=>{
+    const updated={...risk,
+      name:ed.name||`${ed.actor} → ${ed.asset}`,
+      owner:ed.owner,priority:ed.priority,updatedAt:today(),
+      scenario:{...risk.scenario,asset:ed.asset,actor:ed.actor,
+        event:ed.event,loss:ed.loss,concern:ed.concern,assumptions:ed.assumptions}};
+    onUpdate(updated);
+  };
+  return(
+    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
+      <div style={{gridColumn:'span 2'}}>
+        <SectionLabel>基本資訊</SectionLabel>
+        <div style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr',gap:12}}>
+          <div>
+            <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>風險名稱</div>
+            <TInput value={ed.name} onChange={e=>setEd(p=>({...p,name:e.target.value}))}
+              placeholder="例：電商平台客戶資料外洩風險"/>
+          </div>
+          <div>
+            <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>負責人</div>
+            <TInput value={ed.owner} onChange={e=>setEd(p=>({...p,owner:e.target.value}))} placeholder="例：CISO"/>
+          </div>
+          <div>
+            <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>優先等級</div>
+            <TSelect value={ed.priority} onChange={e=>setEd(p=>({...p,priority:e.target.value}))}
+              options={Object.entries(PRI_CFG).map(([v,p])=>({v,l:p.label}))}
+              placeholder="— 選擇 —"/>
+          </div>
+        </div>
+      </div>
+      <div style={{gridColumn:'span 2'}}>
+        <SectionLabel>場景定義</SectionLabel>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+          {[
+            {k:'asset',label:'受影響資產',opts:OPTS.assets},
+            {k:'actor',label:'威脅來源',  opts:OPTS.actors},
+            {k:'event',label:'威脅行為',  opts:OPTS.events},
+            {k:'loss', label:'損失事件',  opts:OPTS.losses},
+          ].map(({k,label,opts})=>(
+            <ScenarioField key={k} label={label} fieldKey={k}
+              value={ed[k]} opts={opts}
+              onChange={v=>setEd(p=>({...p,[k]:v}))}/>
+          ))}
+          <div>
+            <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>業務衝擊關切</div>
+            <TInput value={ed.concern} onChange={e=>setEd(p=>({...p,concern:e.target.value}))} rows={2}
+              placeholder="預期可能造成的業務影響…"/>
+          </div>
+          <div>
+            <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>分析假設條件</div>
+            <TInput value={ed.assumptions} onChange={e=>setEd(p=>({...p,assumptions:e.target.value}))} rows={2}
+              placeholder="分析前提與假設說明…"/>
+          </div>
+        </div>
+      </div>
+      <div style={{gridColumn:'span 2',display:'flex',justifyContent:'flex-end'}}>
+        <Btn ch="儲存變更" onClick={save} v="grn"/>
+      </div>
+    </div>
+  );
+}
+
+/* Tab: FAIR 分析 */
+function TabFair({risk,onUpdate}){
+  /* nodes live in local state; synced to risk on simulate */
+  const[nodes,setNodes]=useState(()=>{
+    /* migrate old fairParams schema → fairNodes */
+    if(risk.fairNodes)return JSON.parse(JSON.stringify(risk.fairNodes));
+    const n=cloneNodes(DEF_NODES);
+    if(risk.fairParams){
+      const p=risk.fairParams;
+      ['cf','poa','tcap','rs','pl','slef','slm'].forEach(k=>{
+        if(p[k]){n[k].lo=p[k].lo;n[k].ml=p[k].ml;n[k].hi=p[k].hi;}
+      });
+    }
+    return n;
+  });
+  const[simming,setSimming]=useState(false);
+  const runSim=()=>{
+    setSimming(true);
+    setTimeout(()=>{
+      try{
+        const result=runMC(nodes,10000);
+        const newStatus=risk.status==='registered'?'analyzed':risk.status;
+        onUpdate({...risk,fairNodes:nodes,fairResult:result,
+          status:newStatus,updatedAt:today()});
+      }finally{setSimming(false);}
+    },80);
+  };
+  const hist=useMemo(()=>risk.fairResult?mkHist(risk.fairResult.raw):null,[risk.fairResult]);
+  const exc =useMemo(()=>risk.fairResult?mkExc(risk.fairResult.raw):null,[risk.fairResult]);
+  return(
+    <div>
+      <FairDiagram nodes={nodes} setNodes={setNodes}/>
+      <div style={{margin:'12px 0',display:'flex',justifyContent:'flex-end',gap:10,alignItems:'center'}}>
+        {risk.fairResult&&(
+          <span style={{fontSize:11.5,color:C.sub,fontFamily:'Inter,sans-serif'}}>
+            上次模擬：{fmtDate(risk.updatedAt)}
+          </span>
+        )}
+        <Btn ch={simming?'模擬執行中…':risk.fairResult?'重新執行模擬':'▶ 執行蒙地卡羅模擬（N=10,000）'}
+          onClick={runSim} disabled={simming}
+          style={{padding:'9px 24px',fontSize:13}}/>
+      </div>
+      {risk.fairResult&&(
+        <div className="fade">
+          <SectionLabel>量化結果</SectionLabel>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:10,marginBottom:14}}>
+            {[
+              {label:'預期年度損失 (EAL)',val:usd(risk.fairResult.mean),note:'均值，非最可能值',hi:true},
+              {label:'P50 中位數',val:usd(risk.fairResult.p50),note:'50% 情境低於此值'},
+              {label:'P90',val:usd(risk.fairResult.p90),note:'90% 情境低於此值'},
+              {label:'P95',val:usd(risk.fairResult.p95),note:'尾端風險'},
+            ].map((m,i)=>(
+              <div key={i} style={{background:i===0?C.txt:C.surf,
+                border:`1px solid ${i===0?C.txt:C.bdr}`,borderRadius:4,padding:'12px 14px'}}>
+                <div style={{fontSize:10.5,color:i===0?'rgba(255,255,255,.6)':C.fnt,
+                  marginBottom:4,fontFamily:'Inter,sans-serif'}}>{m.label}</div>
+                <div style={{fontSize:19,fontWeight:600,color:i===0?'white':C.txt,
+                  letterSpacing:'-0.02em',fontFamily:'Inter,sans-serif'}}>{m.val}</div>
+                <div style={{fontSize:10,color:i===0?'rgba(255,255,255,.45)':C.sub,
+                  marginTop:3,fontFamily:'Inter,sans-serif'}}>{m.note}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}}>
+            <div style={{background:C.surf,border:`1px solid ${C.bdr}`,borderRadius:4,padding:12}}>
+              <div style={{fontSize:11,fontWeight:600,color:C.sub,marginBottom:8,fontFamily:'Inter,sans-serif'}}>
+                損失分佈直方圖
+              </div>
+              <MiniHistogram data={hist} mean={risk.fairResult.mean}/>
+              <div style={{fontSize:10,color:C.sub,marginTop:5,display:'flex',gap:6,alignItems:'center',fontFamily:'Inter,sans-serif'}}>
+                <span style={{display:'inline-block',width:14,borderTop:`1.5px dashed ${C.red}`}}/>均值 {usd(risk.fairResult.mean)}
+              </div>
+            </div>
+            <div style={{background:C.surf,border:`1px solid ${C.bdr}`,borderRadius:4,padding:12}}>
+              <div style={{fontSize:11,fontWeight:600,color:C.sub,marginBottom:8,fontFamily:'Inter,sans-serif'}}>
+                損失超越機率曲線
+              </div>
+              <MiniExceedance data={exc}/>
+              <div style={{fontSize:10,color:C.sub,marginTop:5,fontFamily:'Inter,sans-serif'}}>
+                縱：超越機率 · 橫：年度損失
+              </div>
+            </div>
+          </div>
+          <div style={{background:C.grnL,border:`1px solid ${C.grn}30`,
+            borderRadius:4,padding:'12px 16px'}}>
+            <div style={{fontSize:10,fontWeight:600,color:C.grn,letterSpacing:'0.1em',
+              textTransform:'uppercase',marginBottom:8,fontFamily:'Inter,sans-serif'}}>業務解讀</div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6}}>
+              {[
+                `EAL（均值）約 ${usd(risk.fairResult.mean)}。此為平均損失，不代表最可能發生值。`,
+                `${risk.fairResult.pLoss}% 的情境產生非零損失。`,
+                `P90：90% 機率下年度損失不超過 ${usd(risk.fairResult.p90)}。`,
+                `P99 尾端風險估計可達 ${usd(risk.fairResult.p99)}，發生機率極低但影響重大。`,
+              ].map((t,i)=>(
+                <div key={i} style={{fontSize:12,color:C.txt,lineHeight:1.7,fontFamily:'Inter,sans-serif'}}>
+                  · {t}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* Tab: 評估 */
+function TabEvaluation({risk,onUpdate}){
+  const[ed,setEd]=useState(()=>({...risk.evaluation}));
+  const upd=(k,v)=>setEd(p=>({...p,[k]:v}));
+  const save=()=>{
+    const newStatus=ed.decision?'evaluated':risk.status;
+    onUpdate({...risk,evaluation:{...ed,reviewedAt:today()},
+      status:newStatus,updatedAt:today()});
+  };
+  if(!risk.fairResult){
+    return(
+      <div style={{textAlign:'center',padding:'40px 20px',color:C.fnt,fontFamily:'Inter,sans-serif'}}>
+        請先在「FAIR 分析」標籤執行蒙地卡羅模擬，才能進行風險評估。
+      </div>
+    );
+  }
+  const decisions=[
+    {v:'accept',  l:'接受 Accept',   desc:'損失在可接受範圍，維持現狀'},
+    {v:'treat',   l:'處理 Treat',    desc:'實施控制措施降低風險'},
+    {v:'transfer',l:'轉移 Transfer', desc:'透過保險或外包轉移'},
+    {v:'avoid',   l:'迴避 Avoid',    desc:'停止相關業務活動'},
+  ];
+  return(
+    <div>
+      {/* FAIR 結果摘要（唯讀） */}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:10,marginBottom:16}}>
+        {[
+          ['EAL 均值',usd(risk.fairResult.mean)],
+          ['P50',usd(risk.fairResult.p50)],
+          ['P90',usd(risk.fairResult.p90)],
+          ['損失發生率',risk.fairResult.pLoss+'%'],
+        ].map(([k,v])=>(
+          <div key={k} style={{background:'#F6F4EF',border:`1px solid ${C.bdr}`,
+            borderRadius:4,padding:'10px 14px'}}>
+            <div style={{fontSize:10,color:C.fnt,marginBottom:3,fontFamily:'Inter,sans-serif'}}>{k}</div>
+            <div style={{fontSize:16,fontWeight:600,color:C.txt,fontFamily:'Inter,sans-serif'}}>{v}</div>
+          </div>
+        ))}
+      </div>
+
+      <SectionLabel>評估決策</SectionLabel>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:16}}>
+        {decisions.map(d=>(
+          <div key={d.v} onClick={()=>upd('decision',d.v)}
+            style={{padding:'12px 14px',borderRadius:4,cursor:'pointer',
+              border:`2px solid ${ed.decision===d.v?C.txt:C.bdr}`,
+              background:ed.decision===d.v?C.txt:C.surf,transition:'all .12s'}}>
+            <div style={{fontSize:13,fontWeight:600,
+              color:ed.decision===d.v?'white':C.txt,fontFamily:'Inter,sans-serif',marginBottom:2}}>
+              {d.l}
+            </div>
+            <div style={{fontSize:11.5,
+              color:ed.decision===d.v?'rgba(255,255,255,.65)':C.sub,fontFamily:'Inter,sans-serif'}}>
+              {d.desc}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:14}}>
+        <div>
+          <div style={{fontSize:11,color:C.sub,marginBottom:5,fontFamily:'Inter,sans-serif'}}>評估者</div>
+          <TInput value={ed.evaluator} onChange={e=>upd('evaluator',e.target.value)} placeholder="例：資訊安全長"/>
+        </div>
+        <div/>
+        <div style={{gridColumn:'span 2'}}>
+          <div style={{fontSize:11,color:C.sub,marginBottom:5,fontFamily:'Inter,sans-serif'}}>評估理由</div>
+          <TInput value={ed.rationale} onChange={e=>upd('rationale',e.target.value)} rows={3}
+            placeholder="例：P90 損失達 $850K，超出組織可接受門檻 $500K，需採取控制措施"/>
+        </div>
+      </div>
+      <div style={{display:'flex',justifyContent:'flex-end'}}>
+        <Btn ch="儲存評估" onClick={save} v="grn" disabled={!ed.decision}/>
+      </div>
+    </div>
+  );
+}
+
+/* Tab: 應對 */
+function TabTreatment({risk,onUpdate}){
+  const[ed,setEd]=useState(()=>({...risk.treatment}));
+  const upd=(k,v)=>setEd(p=>({...p,[k]:v}));
+  const save=()=>{
+    const newStatus=ed.strategy?'in_treatment':risk.status;
+    onUpdate({...risk,treatment:{...ed},status:newStatus,updatedAt:today()});
+  };
+  const overdue=ed.dueDate&&isOverdue(ed.dueDate)&&ed.treatStatus!=='completed';
+  const strategies=[
+    {v:'reduce',  l:'降低 Reduce',   c:C.grn},
+    {v:'transfer',l:'轉移 Transfer', c:C.blu},
+    {v:'accept',  l:'接受 Accept',   c:C.fnt},
+    {v:'avoid',   l:'迴避 Avoid',    c:C.red},
+  ];
+  return(
+    <div>
+      <SectionLabel>應對策略</SectionLabel>
+      <div style={{display:'flex',gap:8,marginBottom:16}}>
+        {strategies.map(s=>(
+          <div key={s.v} onClick={()=>upd('strategy',s.v)}
+            style={{flex:1,padding:'10px 8px',borderRadius:4,cursor:'pointer',
+              textAlign:'center',fontSize:12.5,fontWeight:600,fontFamily:'Inter,sans-serif',
+              border:`2px solid ${ed.strategy===s.v?s.c:C.bdr}`,
+              background:ed.strategy===s.v?s.c+'14':'white',
+              color:ed.strategy===s.v?s.c:C.sub,transition:'all .12s'}}>
+            {s.l}
+          </div>
+        ))}
+      </div>
+
+      <SectionLabel>應對計畫</SectionLabel>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:14}}>
+        <div style={{gridColumn:'span 2'}}>
+          <div style={{fontSize:11,color:C.sub,marginBottom:5,fontFamily:'Inter,sans-serif'}}>控制措施描述</div>
+          <TInput value={ed.description} onChange={e=>upd('description',e.target.value)} rows={2}
+            placeholder="例：部署 EDR、強化 PAM、實施資料分類與 DLP 策略"/>
+        </div>
+        <div style={{gridColumn:'span 2'}}>
+          <div style={{fontSize:11,color:C.sub,marginBottom:5,fontFamily:'Inter,sans-serif'}}>具體控制項目</div>
+          <TInput value={ed.controls} onChange={e=>upd('controls',e.target.value)} rows={2}
+            placeholder="例：全面部署 MFA、網路分段、加密儲存、安全意識培訓"/>
+        </div>
+        <div>
+          <div style={{fontSize:11,color:C.sub,marginBottom:5,fontFamily:'Inter,sans-serif'}}>應對負責人</div>
+          <TInput value={ed.owner} onChange={e=>upd('owner',e.target.value)} placeholder="例：IT 安全主管"/>
+        </div>
+        <div>
+          <div style={{fontSize:11,color:C.sub,marginBottom:5,fontFamily:'Inter,sans-serif'}}>
+            目標完成日 {overdue&&<span style={{color:C.red,fontSize:10}}>（已逾期）</span>}
+          </div>
+          <TInput type="date" value={ed.dueDate} onChange={e=>upd('dueDate',e.target.value)}/>
+        </div>
+        <div>
+          <div style={{fontSize:11,color:C.sub,marginBottom:5,fontFamily:'Inter,sans-serif'}}>預估預算</div>
+          <TInput value={ed.budget} onChange={e=>upd('budget',e.target.value)} placeholder="例：$120,000"/>
+        </div>
+        <div>
+          <div style={{fontSize:11,color:C.sub,marginBottom:5,fontFamily:'Inter,sans-serif'}}>預期殘餘風險</div>
+          <TInput value={ed.expectedResidual} onChange={e=>upd('expectedResidual',e.target.value)}
+            placeholder="例：措施完成後 EAL 預計降至 $80K"/>
+        </div>
+      </div>
+
+      <SectionLabel>執行狀態</SectionLabel>
+      <div style={{display:'flex',gap:8,marginBottom:16}}>
+        {Object.entries(TREAT_STATUS).map(([v,s])=>(
+          <div key={v} onClick={()=>upd('treatStatus',v)}
+            style={{flex:1,padding:'8px 6px',borderRadius:4,cursor:'pointer',
+              textAlign:'center',fontSize:12,fontWeight:500,fontFamily:'Inter,sans-serif',
+              border:`2px solid ${ed.treatStatus===v?s.color:C.bdr}`,
+              background:ed.treatStatus===v?s.color+'15':'white',
+              color:ed.treatStatus===v?s.color:C.sub,transition:'all .12s'}}>
+            {s.label}
+          </div>
+        ))}
+      </div>
+
+      <div style={{display:'flex',justifyContent:'flex-end'}}>
+        <Btn ch="儲存應對計畫" onClick={save} v="grn"/>
+      </div>
+    </div>
+  );
+}
+
+/* Tab: 監控 */
+function TabMonitoring({risk,onUpdate}){
+  const[ed,setEd]=useState(()=>({...risk.monitoring}));
+  const upd=(k,v)=>setEd(p=>({...p,[k]:v}));
+  const save=()=>{
+    const newStatus=risk.treatment.treatStatus==='completed'?'monitoring':risk.status;
+    onUpdate({...risk,monitoring:{...ed,lastReviewed:today()},
+      status:newStatus,updatedAt:today()});
+  };
+  const closeRisk=()=>{
+    if(window.confirm('確定要結案此風險？結案後仍可重新開啟。')){
+      onUpdate({...risk,status:'closed',updatedAt:today()});
+    }
+  };
+  const cycles=[
+    {v:'monthly',  l:'每月'},
+    {v:'quarterly',l:'每季'},
+    {v:'biannual', l:'每半年'},
+    {v:'annual',   l:'每年'},
+  ];
+  return(
+    <div>
+      <SectionLabel>複查設定</SectionLabel>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:16}}>
+        <div>
+          <div style={{fontSize:11,color:C.sub,marginBottom:6,fontFamily:'Inter,sans-serif'}}>複查週期</div>
+          <div style={{display:'flex',gap:6}}>
+            {cycles.map(c=>(
+              <div key={c.v} onClick={()=>upd('reviewCycle',c.v)}
+                style={{flex:1,padding:'7px 4px',borderRadius:3,cursor:'pointer',
+                  textAlign:'center',fontSize:11.5,fontFamily:'Inter,sans-serif',fontWeight:500,
+                  border:`2px solid ${ed.reviewCycle===c.v?C.txt:C.bdr}`,
+                  background:ed.reviewCycle===c.v?C.txt:'white',
+                  color:ed.reviewCycle===c.v?'white':C.sub,transition:'all .12s'}}>
+                {c.l}
+              </div>
+            ))}
+          </div>
+        </div>
+        <div>
+          <div style={{fontSize:11,color:C.sub,marginBottom:5,fontFamily:'Inter,sans-serif'}}>下次複查日</div>
+          <TInput type="date" value={ed.nextReview} onChange={e=>upd('nextReview',e.target.value)}/>
+        </div>
+        <div style={{gridColumn:'span 2'}}>
+          <div style={{fontSize:11,color:C.sub,marginBottom:5,fontFamily:'Inter,sans-serif'}}>監控備註</div>
+          <TInput value={ed.notes} onChange={e=>upd('notes',e.target.value)} rows={2}
+            placeholder="例：每月由安全團隊提交 KRI 報告；控制效能複查列入季度稽核"/>
+        </div>
+      </div>
+
+      {/* Timeline */}
+      <SectionLabel>風險生命週期</SectionLabel>
+      <div style={{marginBottom:16}}>
+        {[
+          {step:0,label:'已登記',     date:risk.createdAt},
+          {step:1,label:'FAIR 分析完成',date:risk.fairResult?risk.updatedAt:null},
+          {step:2,label:'評估決策',   date:risk.evaluation.reviewedAt},
+          {step:3,label:'應對計畫',   date:risk.treatment.dueDate?risk.updatedAt:null},
+          {step:4,label:'控制措施完成',date:risk.treatment.treatStatus==='completed'?risk.updatedAt:null},
+          {step:5,label:'監控中',     date:risk.status==='monitoring'?risk.updatedAt:null},
+        ].map((s,i)=>{
+          const done=STATUS_CFG[risk.status]?.step>=s.step;
+          return(
+            <div key={i} style={{display:'flex',alignItems:'center',gap:12,marginBottom:8}}>
+              <div style={{width:24,height:24,borderRadius:'50%',flexShrink:0,
+                display:'flex',alignItems:'center',justifyContent:'center',
+                fontSize:10,fontWeight:700,fontFamily:'Inter,sans-serif',
+                background:done?C.grn:C.bdr,color:done?'white':C.fnt}}>
+                {done?'✓':i+1}
+              </div>
+              <div style={{fontSize:12.5,color:done?C.txt:C.fnt,fontFamily:'Inter,sans-serif',
+                fontWeight:done?500:400}}>{s.label}</div>
+              {s.date&&<div style={{fontSize:11,color:C.fnt,fontFamily:'Inter,sans-serif',marginLeft:'auto'}}>
+                {fmtDate(s.date)}
+              </div>}
+            </div>
+          );
+        })}
+      </div>
+
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+        <Btn ch="結案此風險" onClick={closeRisk} v="ghost"
+          style={{color:C.sub,fontSize:12}}/>
+        <Btn ch="儲存監控設定" onClick={save} v="grn"/>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════
+   RISK DETAIL VIEW
+═══════════════════════════════════════════════════ */
+function RiskDetail({risk,onUpdate,onBack}){
+  const[tab,setTab]=useState('overview');
+  const TABS=[
+    {id:'overview',   label:'概覽'},
+    {id:'fair',       label:'FAIR 分析',     badge:risk.fairResult?'完成':null},
+    {id:'evaluation', label:'評估',          badge:risk.evaluation.decision?risk.evaluation.decision:null},
+    {id:'treatment',  label:'應對',          badge:risk.treatment.treatStatus?TREAT_STATUS[risk.treatment.treatStatus]?.label:null},
+    {id:'monitoring', label:'監控'},
+  ];
+  const decMap={accept:'接受',treat:'處理',transfer:'轉移',avoid:'迴避'};
+  return(
+    <div>
+      {/* Breadcrumb */}
+      <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:14}}>
+        <button onClick={onBack} style={{background:'none',border:'none',cursor:'pointer',
+          fontSize:12.5,color:C.sub,fontFamily:'Inter,sans-serif',padding:0,fontWeight:500}}>
+          ← 風險登記冊
+        </button>
+        <span style={{color:C.bdr}}>/</span>
+        <span style={{fontSize:12.5,color:C.txt,fontFamily:'Inter,sans-serif',fontWeight:500}}>
+          {risk.name||'(未命名)'}
+        </span>
+      </div>
+
+      {/* Risk header */}
+      <div style={{background:C.surf,border:`1px solid ${C.bdr}`,borderRadius:4,
+        padding:'16px 20px',marginBottom:14,display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}}>
+        <div style={{flex:1,minWidth:200}}>
+          <div className="serif" style={{fontSize:20,fontWeight:400,color:C.txt,lineHeight:1.2}}>
+            {risk.name||`${risk.scenario.actor||'—'} → ${risk.scenario.asset||'—'}`}
+          </div>
+          <div style={{fontSize:11.5,color:C.sub,marginTop:4,fontFamily:'Inter,sans-serif'}}>
+            {[risk.scenario.asset,risk.scenario.event].filter(Boolean).join(' · ')}
+            {risk.owner&&` · 負責人：${risk.owner}`}
+            {` · 登記日：${fmtDate(risk.createdAt)}`}
+          </div>
+        </div>
+        <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
+          <PriBadge priority={risk.priority}/>
+          <StatusBadge status={risk.status}/>
+          {risk.fairResult&&(
+            <div style={{padding:'4px 12px',background:'#F2EFE8',borderRadius:3,
+              fontSize:12.5,fontFamily:'Inter,sans-serif',fontWeight:500,color:C.txt}}>
+              EAL {usd(risk.fairResult.mean)}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div style={{display:'flex',gap:0,marginBottom:16,
+        borderBottom:`2px solid ${C.bdr}`,background:C.surf,borderRadius:'4px 4px 0 0',
+        border:`1px solid ${C.bdr}`,overflow:'hidden'}}>
+        {TABS.map(t=>{
+          const act=tab===t.id;
+          return(
+            <button key={t.id} onClick={()=>setTab(t.id)} style={{
+              padding:'11px 18px',fontSize:12.5,fontWeight:act?600:400,
+              fontFamily:'Inter,sans-serif',cursor:'pointer',
+              border:'none',borderBottom:act?`2px solid ${C.txt}`:'2px solid transparent',
+              background:act?'white':'transparent',color:act?C.txt:C.sub,
+              marginBottom:act?'-1px':'0',transition:'color .12s',
+              display:'flex',alignItems:'center',gap:6}}>
+              {t.label}
+              {t.badge&&(
+                <span style={{fontSize:10,background:C.bg,color:C.sub,
+                  padding:'1px 6px',borderRadius:2,fontFamily:'Inter,sans-serif',
+                  fontWeight:500}}>{decMap[t.badge]||t.badge}</span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Tab content */}
+      <div className="fade" key={tab}
+        style={{background:C.surf,border:`1px solid ${C.bdr}`,
+          borderRadius:4,padding:'20px 20px 24px'}}>
+        {tab==='overview'  &&<TabOverview    risk={risk} onUpdate={onUpdate}/>}
+        {tab==='fair'      &&<TabFair        risk={risk} onUpdate={onUpdate}/>}
+        {tab==='evaluation'&&<TabEvaluation  risk={risk} onUpdate={onUpdate}/>}
+        {tab==='treatment' &&<TabTreatment   risk={risk} onUpdate={onUpdate}/>}
+        {tab==='monitoring'&&<TabMonitoring  risk={risk} onUpdate={onUpdate}/>}
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════
+   APP
+═══════════════════════════════════════════════════ */
+function App(){
+  const[risks,setRisks]=useState(()=>loadRisks());
+  const[view,setView]=useState('register');
+  const[selectedId,setSelectedId]=useState(null);
+  const[showNew,setShowNew]=useState(false);
+
+  useEffect(()=>{saveRisks(risks);},[risks]);
+
+  const selectedRisk=risks.find(r=>r.id===selectedId);
+
+  const addRisk=r=>{
+    setRisks(rs=>[r,...rs]);
+    setShowNew(false);
+    setSelectedId(r.id);
+    setView('detail');
+  };
+  const updateRisk=updated=>{
+    setRisks(rs=>rs.map(r=>r.id===updated.id?updated:r));
+  };
+  const openRisk=id=>{
+    setSelectedId(id);
+    setView('detail');
+  };
+
+  const totalRisks=risks.length;
+  const critCount=risks.filter(r=>r.priority==='critical').length;
+
+  return(
+    <div style={{fontFamily:"'Inter','Noto Serif TC',sans-serif",
+      background:C.bg,minHeight:'100vh',color:C.txt}}>
+
+      {/* Header */}
+      <header className="no-print" style={{
+        background:C.surf,borderBottom:`1px solid ${C.bdr}`,
+        padding:'0 28px',display:'flex',alignItems:'center',
+        height:48,position:'sticky',top:0,zIndex:100,gap:16}}>
+        {/* Logo area */}
+        <div style={{display:'flex',alignItems:'center',gap:10,flexShrink:0}}>
+          <svg width="22" height="22" viewBox="0 0 22 22">
+            <circle cx="11" cy="11" r="10" fill="none" stroke={C.txt} strokeWidth="1.2"/>
+            <circle cx="11" cy="11" r="6"  fill="none" stroke={C.txt} strokeWidth="0.7" strokeDasharray="2 3"/>
+            <circle cx="11" cy="11" r="2.5" fill={C.red}/>
+          </svg>
+          <span style={{fontSize:14.5,fontWeight:600,color:C.txt,fontFamily:'Inter,sans-serif',
+            letterSpacing:'-0.01em'}}>企業風險管理平台</span>
+        </div>
+
+        <div style={{width:1,height:18,background:C.bdr}}/>
+
+        {/* Breadcrumb nav */}
+        {view==='detail'&&selectedRisk&&(
+          <div style={{display:'flex',alignItems:'center',gap:8,fontSize:12.5,fontFamily:'Inter,sans-serif'}}>
+            <button onClick={()=>setView('register')} style={{
+              background:'none',border:'none',cursor:'pointer',
+              color:C.sub,fontFamily:'Inter,sans-serif',fontSize:12.5,padding:0}}>
+              登記冊
+            </button>
+            <span style={{color:C.bdr}}>/</span>
+            <span style={{color:C.txt,fontWeight:500,maxWidth:240,overflow:'hidden',
+              textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+              {selectedRisk.name||'(未命名)'}
+            </span>
+          </div>
+        )}
+
+        <div style={{flex:1}}/>
+
+        {/* Stats */}
+        <div style={{display:'flex',gap:14,alignItems:'center',fontSize:11.5,
+          fontFamily:'Inter,sans-serif',color:C.sub}}>
+          <span>{totalRisks} 個風險</span>
+          {critCount>0&&(
+            <span style={{color:C.red,fontWeight:600}}>{critCount} 個緊急</span>
+          )}
+        </div>
+      </header>
+
+      {/* Page content */}
+      <div style={{maxWidth:1120,margin:'0 auto',padding:'24px 24px'}}>
+        {/* Page title */}
+        {view==='register'&&(
+          <div style={{marginBottom:20}}>
+            <h1 className="serif" style={{fontSize:28,fontWeight:300,color:C.txt,
+              letterSpacing:'-0.01em',lineHeight:1.15}}>風險登記冊</h1>
+            <p style={{fontSize:13,color:C.sub,marginTop:4,fontFamily:'Inter,sans-serif'}}>
+              管理組織所有 FAIR 量化風險 · 點擊風險列開啟詳細分析
+            </p>
+          </div>
+        )}
+
+        {view==='register'&&(
+          <div className="fade">
+            <RiskRegister risks={risks} onOpen={openRisk} onAdd={()=>setShowNew(true)}/>
+          </div>
+        )}
+
+        {view==='detail'&&selectedRisk&&(
+          <div className="fade">
+            <RiskDetail risk={selectedRisk} onUpdate={updateRisk}
+              onBack={()=>setView('register')}/>
+          </div>
+        )}
+      </div>
+
+      {/* New risk side panel */}
+      {showNew&&<NewRiskPanel onSave={addRisk} onClose={()=>setShowNew(false)}/>}
     </div>
   );
 }
