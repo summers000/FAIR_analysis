@@ -507,20 +507,22 @@ function FairDiagram({nodes,setNodes}){
 
   /* ── SVG layout: box nodes, cx/cy = center, w/h = box size ── */
   /* ── Canvas: wider + taller to fit full English names ── */
-  const VW=980,VH=520;
   /*
-   * NP: [cx, cy, halfW, halfH]
-   * Rows:  y=56 / y=162 / y=286 / y=422
-   * halfH increased to fit larger text
+   * VW/VH: canvas — NP boxes sized to 12px font
+   * Centers derived from children-up:
+   *   CF(55)PoA(156)TCap(260)RS(361) | SLEF(750)SLM(920)
+   *   TEF=106 Vul=311 PL=660 SL=835
+   *   LEF=209 LM=748  Risk=479
    */
+  const VW=1000,VH=500;
   const NP={
-    risk:[490, 56, 65, 26],
-    lef: [215,162,100, 30],  lm:  [726,162, 90, 30],
-    tef: [103,286, 88, 30],  vul: [330,286, 76, 30],
-    pl:  [576,286, 74, 30],  sl:  [840,286, 84, 30],
-    cf:  [ 48,422, 66, 26],  poa: [184,422, 84, 26],
-    tcap:[292,422, 74, 26],  rs:  [420,422, 72, 26],
-    slef:[748,422, 86, 26],  slm: [912,422, 68, 26],
+    risk:[479, 46, 28, 18],
+    lef: [209,138, 44, 20],  lm:  [748,138, 44, 20],
+    tef: [106,240, 50, 20],  vul: [311,240, 54, 20],
+    pl:  [660,240, 44, 20],  sl:  [835,240, 40, 20],
+    cf:  [ 55,358, 42, 18],  poa: [156,358, 46, 18],
+    tcap:[260,358, 44, 18],  rs:  [361,358, 44, 18],
+    slef:[750,358, 60, 18],  slm: [920,358, 42, 18],
   };
   const elbowPath=(a,b)=>{
     const[ax,ay,,ah]=NP[a],[bx,by,,bh]=NP[b];
@@ -528,24 +530,22 @@ function FairDiagram({nodes,setNodes}){
     return `M${ax},${ay+ah} L${ax},${mid} L${bx},${mid} L${bx},${by-bh}`;
   };
 
-  /* Node metadata — en1/en2 for two-line label, zh always #111110 */
+  /* NM: English only — no zh field */
   const NM={
-    risk:{zh:'風險',       en1:'Risk',               en2:'',                  abbr:'Risk', clr:'#2A2820'},
-    lef: {zh:'損失事件頻率', en1:'Loss Event',          en2:'Frequency',         abbr:'LEF',  clr:'#2C5018'},
-    lm:  {zh:'損失規模',    en1:'Loss',                en2:'Magnitude',         abbr:'LM',   clr:'#A84810'},
-    tef: {zh:'威脅事件頻率', en1:'Threat Event',        en2:'Frequency',         abbr:'TEF',  clr:'#3A6020'},
-    vul: {zh:'脆弱性',      en1:'Vulnerability',       en2:'',                  abbr:'Vul',  clr:'#3A6020'},
-    pl:  {zh:'主要損失',    en1:'Primary Loss',         en2:'',                  abbr:'PL',   clr:'#B65018'},
-    sl:  {zh:'次要損失',    en1:'Secondary',            en2:'Loss',              abbr:'SL',   clr:'#B65018'},
-    cf:  {zh:'接觸頻率',    en1:'Contact',              en2:'Frequency',         abbr:'CF',   clr:'#4E7828'},
-    poa: {zh:'採取行動機率', en1:'Probability',          en2:'of Action',         abbr:'PoA',  clr:'#4E7828'},
-    tcap:{zh:'威脅能力',    en1:'Threat',               en2:'Capability',        abbr:'TCap', clr:'#4E7828'},
-    rs:  {zh:'抵抗強度',    en1:'Resistance',           en2:'Strength',          abbr:'RS',   clr:'#4E7828'},
-    slef:{zh:'次要損失頻率', en1:'Sec. Loss Event',      en2:'Frequency',         abbr:'SLEF', clr:'#C47828'},
-    slm: {zh:'次要損失規模', en1:'Sec. Loss',             en2:'Magnitude',         abbr:'SLM',  clr:'#C47828'},
-  };
-
-  /* Display value per node */
+    risk:{en1:'Risk',              en2:'',            abbr:'Risk', clr:'#2A2820'},
+    lef: {en1:'Loss Event',        en2:'Frequency',   abbr:'LEF',  clr:'#2C5018'},
+    lm:  {en1:'Loss',              en2:'Magnitude',   abbr:'LM',   clr:'#A84810'},
+    tef: {en1:'Threat Event',      en2:'Frequency',   abbr:'TEF',  clr:'#3A6020'},
+    vul: {en1:'Vulnerability',     en2:'',            abbr:'Vul',  clr:'#3A6020'},
+    pl:  {en1:'Primary',           en2:'Loss',        abbr:'PL',   clr:'#B65018'},
+    sl:  {en1:'Secondary',         en2:'Loss',        abbr:'SL',   clr:'#B65018'},
+    cf:  {en1:'Contact',           en2:'Frequency',   abbr:'CF',   clr:'#4E7828'},
+    poa: {en1:'Probability',       en2:'of Action',   abbr:'PoA',  clr:'#4E7828'},
+    tcap:{en1:'Threat',            en2:'Capability',  abbr:'TCap', clr:'#4E7828'},
+    rs:  {en1:'Resistance',        en2:'Strength',    abbr:'RS',   clr:'#4E7828'},
+    slef:{en1:'Sec. Loss Event',   en2:'Frequency',   abbr:'SLEF', clr:'#C47828'},
+    slm: {en1:'Sec. Loss',         en2:'Magnitude',   abbr:'SLM',  clr:'#C47828'},
+  }
   const NVALS={
     risk: usd(al_e),
     lef:  nodes.lef.mode==='direct'?pm(nodes.lef.lo,nodes.lef.ml,nodes.lef.hi).toFixed(3)+'/yr'
@@ -653,16 +653,16 @@ function FairDiagram({nodes,setNodes}){
           <rect width={VW} height={VH} fill="url(#fpg2)"/>
           <rect width={VW} height={VH} fill="url(#fbg1b)"/>
           <rect width={VW} height={VH} fill="url(#fbg2b)"/>
-          {[58,86,116].map((r,i)=>(
-            <circle key={r} cx={490} cy={56} r={r} fill="none" stroke="#D4D0C8"
-              strokeWidth="0.5" strokeDasharray={i===0?"4 6":"2 10"} opacity="0.4"/>
+          {[46,68,92].map((r,i)=>(
+            <circle key={r} cx={479} cy={46} r={r} fill="none" stroke="#D4D0C8"
+              strokeWidth="0.5" strokeDasharray={i===0?"4 6":"2 10"} opacity="0.38"/>
           ))}
-          <line x1={490} y1={84} x2={490} y2={510}
-            stroke="#CCCAC0" strokeWidth="0.5" strokeDasharray="3 8" opacity="0.38"/>
-          <text x={220} y={128} textAnchor="middle" fontSize="8" fill="#2C5018"
-            fontWeight="700" letterSpacing="0.14em" fontFamily="monospace" opacity="0.65">FREQUENCY</text>
-          <text x={726} y={128} textAnchor="middle" fontSize="8" fill="#A84810"
-            fontWeight="700" letterSpacing="0.14em" fontFamily="monospace" opacity="0.65">LOSS</text>
+          <line x1={479} y1={66} x2={479} y2={492}
+            stroke="#CCCAC0" strokeWidth="0.5" strokeDasharray="3 8" opacity="0.35"/>
+          <text x={210} y={112} textAnchor="middle" fontSize="8" fill="#2C5018"
+            fontWeight="700" letterSpacing="0.14em" fontFamily="monospace" opacity="0.6">FREQUENCY</text>
+          <text x={748} y={112} textAnchor="middle" fontSize="8" fill="#A84810"
+            fontWeight="700" letterSpacing="0.14em" fontFamily="monospace" opacity="0.6">LOSS</text>
 
           {/* Orthogonal elbow edges */}
           {EDGES.map(([a,b])=>{
@@ -676,18 +676,18 @@ function FairDiagram({nodes,setNodes}){
               strokeDasharray={dimmed?"5 4":"none"}/>;
           })}
 
-          {/* Vul comparison bar — between Vul node bottom and TCap/RS top */}
+          {/* Vul comparison bar */}
           {nodes.lef.mode==='derived'&&nodes.vul.mode==='derived'&&(
             <g>
-              <rect x={272} y={328} width={116} height={7} rx={3}
+              <rect x={255} y={276} width={112} height={6} rx={3}
                 fill="#E8E4DC" stroke="#D0CCC4" strokeWidth="0.5"/>
-              <rect x={273} y={329}
-                width={Math.min(114,v.tc_m/10*114)} height={5} rx={2}
+              <rect x={256} y={277}
+                width={Math.min(110,v.tc_m/10*110)} height={4} rx={2}
                 fill="rgba(175,48,30,0.55)"/>
-              <rect x={273} y={329}
-                width={Math.min(114,v.rs_m/10*114)} height={5} rx={2}
+              <rect x={256} y={277}
+                width={Math.min(110,v.rs_m/10*110)} height={4} rx={2}
                 fill="rgba(48,84,26,0.5)"/>
-              <text x={330} y={348} textAnchor="middle" fontSize="8"
+              <text x={311} y={293} textAnchor="middle" fontSize="8"
                 fill="#686460" fontFamily="monospace">
                 {`Vul≈${vul_pct}% ${vulSt==='attacker'?'⚠攻>守':vulSt==='defender'?'✓守>攻':'⚡均衡'}`}
               </text>
@@ -705,11 +705,10 @@ function FairDiagram({nodes,setNodes}){
             const clk=id!=='risk'&&id!=='sl';
             const clr=isInfo?'#C8C4BC':nm.clr;
             const hasTwoLines=nm.en2&&nm.en2!=='';
-            /* vertical text layout — larger font sizes */
-            const zhY=ny+hh-7;
-            const en1Y=hasTwoLines?ny-8:ny+4;
-            const en2Y=ny+5;
-            const enFs=nm.en1.length>14?8.5:9.5;
+            /* 12px font, no Chinese, centered in box */
+            const en1Y=hasTwoLines?ny-4:ny+4;
+            const en2Y=ny+10;
+            const enFs=12;
             return(
               <g key={id} onClick={e=>clk&&doClick(id,e)}
                 style={{cursor:clk?'pointer':'default'}}>
@@ -743,14 +742,10 @@ function FairDiagram({nodes,setNodes}){
                     fill={isDirect&&!isInfo?'white':(isInfo?'#C0BCB6':clr)}
                     opacity={isInfo?0.65:1}>{nm.en2}</text>
                 )}
-                {/* Chinese name — always #111110 */}
-                <text x={nx} y={zhY} textAnchor="middle"
-                  fontSize="8" fontFamily="Noto Serif TC,sans-serif"
-                  fill={isInfo?'#A8A49A':'#111110'}
-                  opacity={isInfo?0.55:1}>{nm.zh}</text>
+                {/* Chinese name removed — English only */}
                 {/* Computed value below box */}
-                <text x={nx} y={ny+hh+14} textAnchor="middle"
-                  fontSize="9" fontWeight="500"
+                <text x={nx} y={ny+hh+13} textAnchor="middle"
+                  fontSize="9.5" fontWeight="500"
                   fill={isInfo?'#C8C4BC':clr}
                   opacity={isInfo?0.5:1}>{NVALS[id]}</text>
                 {/* D badge for direct-mode switchable */}
