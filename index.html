@@ -182,10 +182,59 @@ const TERMS={
   slm: {zh:'次要損失規模',    en:'Secondary Loss Magnitude',       abbr:'SLM',  unit:'USD', desc:'次要損失事件的預估財務規模'},
 };
 const OPTS={
-  assets:['客戶個資資料庫 (Customer PII)','財務與帳務系統 (Financial System)','員工薪資資料 (HR/Payroll)','原始碼儲存庫 (Source Code Repo)','生產伺服器 (Production Server)','電子郵件系統 (Email System)','VPN / 遠端存取'],
-  actors:['外部駭客－機會型','外部駭客－目標型 (APT)','惡意內部人員','粗心員工','競爭對手','國家級威脅者'],
-  events:['未授權存取','勒索軟體攻擊','資料外洩 (Exfiltration)','DDoS 服務中斷','社交工程攻擊','供應鏈滲透','特權濫用'],
-  losses:['資料外洩罰款與合規費用','業務中斷與收入損失','聲譽損害與客戶流失','事件回應與系統復原','法律訴訟與和解費用','智慧財產損失'],
+  assets:[
+    '客戶資料與個人資訊',
+    '財務系統與帳務記錄',
+    '人力資源與薪資資料',
+    '智慧財產與商業機密',
+    '實體設施與基礎建設',
+    '供應鏈與廠商關係',
+    '法規許可與執照',
+    '品牌聲譽與市場形象',
+    '關鍵人才與核心技術人員',
+    '生產設備與營運系統',
+    '環境資源與自然資產',
+    '資訊系統與數位基礎建設',
+  ],
+  actors:[
+    '外部惡意攻擊者（機會型）',
+    '外部惡意攻擊者（針對型）',
+    '國家級威脅行為者',
+    '惡意內部人員',
+    '粗心或疏忽的員工',
+    '供應商或第三方合作夥伴',
+    '競爭對手',
+    '社會運動團體或抗議組織',
+    '主管機關或監理單位',
+    '自然環境與天然災害',
+    '市場力量與總體經濟變動',
+  ],
+  events:[
+    '未授權存取或資料外洩',
+    '詐欺或財務舞弊',
+    '供應鏈中斷或廠商違約',
+    '法規不合規或違規事件',
+    '業務中斷或營運失效',
+    '環境事故或污染事件',
+    '聲譽危機或媒體負面報導',
+    '關鍵人才離職或人才流失',
+    '實體安全事故或設施破壞',
+    '法律糾紛或訴訟事件',
+    '市場震盪或總體經濟衝擊',
+    '自然災害或不可抗力事件',
+  ],
+  losses:[
+    '監管罰款與合規費用',
+    '業務中斷與收入損失',
+    '聲譽損害與客戶流失',
+    '事件回應與復原費用',
+    '法律責任與和解費用',
+    '智慧財產損失',
+    '環境整治與復原費用',
+    '合約違約罰款與 SLA 賠償',
+    '人員重置與招募費用',
+    '生產力下降與效率損失',
+  ],
 };
 /* ═══════════════════════════════════════════════════
    NODE MODE DATA MODEL
@@ -253,10 +302,28 @@ function newRisk(overrides={}){
     scenario:{asset:'',actor:'',event:'',loss:'',concern:'',assumptions:''},
     fairNodes:cloneNodes(DEF_NODES),
     fairResult:null,
-    evaluation:{decision:'',rationale:'',evaluator:'',reviewedAt:''},
-    treatment:{strategy:'',description:'',controls:'',owner:'',dueDate:'',
-      treatStatus:'not_started',budget:'',expectedResidual:'',rationale:''},
-    monitoring:{reviewCycle:'quarterly',nextReview:'',notes:'',lastReviewed:''},
+    evaluation:{
+      decision:'',evaluator:'',evaluationDate:'',
+      basis:'',rationale:'',escalation:'no',approvalLevel:'',
+      appetiteThreshold:'',toleranceThreshold:'',thresholdSource:'',
+      reviewedAt:'',
+    },
+    treatment:{
+      strategy:'',description:'',controls:'',owner:'',dueDate:'',
+      treatStatus:'not_started',budget:'',budgetType:'',
+      residualEAL:'',residualP90:'',residualP95:'',residualPLoss:'',
+      residualBasis:'',residualNarrative:'',
+      financeReviewer:'',financeStatus:'',approvedAmount:'',financeNotes:'',
+      insuranceNeeded:'no',insuranceNotes:'',annualizedCost:'',
+      rationale:'',
+    },
+    monitoring:{
+      reviewCycle:'quarterly',nextReview:'',monitoringOwner:'',
+      treatmentProgress:'',assumptionChanged:'no',assumptionNotes:'',
+      residualWithinThreshold:'',refreshNeeded:'no',
+      changeLog:'',notes:'',lastReviewed:'',
+    },
+    decision:{},
     ...overrides
   };
 }
@@ -264,7 +331,7 @@ function newRisk(overrides={}){
 /* ═══════════════════════════════════════════════════
    LOCAL STORAGE
 ═══════════════════════════════════════════════════ */
-const LS_KEY='fair_register_v2';
+const LS_KEY='fair_register_v3';
 function loadRisks(){
   try{
     const d=localStorage.getItem(LS_KEY);
@@ -1671,13 +1738,29 @@ function TabFair({risk,onUpdate}){
 }
 
 /* Tab: 評估 */
+/* Tab: 評估 */
 function TabEvaluation({risk,onUpdate}){
-  const[ed,setEd]=useState(()=>({...risk.evaluation}));
-  const upd=(k,v)=>setEd(p=>({...p,[k]:v}));
+  const init=()=>({...{
+    decision:'',evaluator:'',evaluationDate:today(),
+    basis:'',rationale:'',escalation:'no',approvalLevel:'',
+    appetiteThreshold:'',toleranceThreshold:'',thresholdSource:'',reviewedAt:'',
+  },...risk.evaluation});
+  const[ed,setEd]=useState(init);
+  const[saved,setSaved]=useState(false);
+  const upd=(k,v)=>{setEd(p=>({...p,[k]:v}));setSaved(false);};
+  const isDirty=useMemo(()=>{
+    const e=risk.evaluation;
+    return ed.decision!==e.decision||ed.evaluator!==e.evaluator||
+      ed.basis!==e.basis||ed.rationale!==e.rationale||
+      ed.escalation!==e.escalation||ed.approvalLevel!==e.approvalLevel||
+      ed.appetiteThreshold!==e.appetiteThreshold||
+      ed.toleranceThreshold!==e.toleranceThreshold||
+      ed.thresholdSource!==e.thresholdSource||ed.evaluationDate!==e.evaluationDate;
+  },[ed,risk.evaluation]);
   const save=()=>{
     const newStatus=ed.decision?'evaluated':risk.status;
-    onUpdate({...risk,evaluation:{...ed,reviewedAt:today()},
-      status:newStatus,updatedAt:today()});
+    onUpdate({...risk,evaluation:{...ed,reviewedAt:today()},status:newStatus,updatedAt:today()});
+    setSaved(true);
   };
   if(!risk.fairResult){
     return(
@@ -1686,40 +1769,150 @@ function TabEvaluation({risk,onUpdate}){
       </div>
     );
   }
+  const r=risk.fairResult;
+  const ealNum=parseFloat(ed.appetiteThreshold)||0;
+  const p90Num=parseFloat(ed.toleranceThreshold)||0;
+  const ealExceeds=ealNum>0&&r.mean>ealNum;
+  const p90Exceeds=p90Num>0&&r.p90>p90Num;
+  const anyExceeds=ealExceeds||p90Exceeds;
   const decisions=[
-    {v:'accept',  l:'接受 Accept',   desc:'損失在可接受範圍，維持現狀'},
-    {v:'treat',   l:'處理 Treat',    desc:'實施控制措施降低風險'},
-    {v:'transfer',l:'轉移 Transfer', desc:'透過保險或外包轉移'},
-    {v:'avoid',   l:'迴避 Avoid',    desc:'停止相關業務活動'},
+    {v:'accept',  l:'接受',  en:'Accept',   desc:'損失在可接受範圍，維持現狀監控'},
+    {v:'treat',   l:'處理',  en:'Treat',    desc:'實施控制措施以降低風險暴露'},
+    {v:'transfer',l:'轉移',  en:'Transfer', desc:'透過保險或合約安排轉移財務風險'},
+    {v:'avoid',   l:'迴避',  en:'Avoid',    desc:'停止或改變導致此風險的業務活動'},
+  ];
+  const escalations=[
+    {v:'no',   l:'不需要'},
+    {v:'dept', l:'部門主管核准'},
+    {v:'exec', l:'高階主管核准'},
+    {v:'board',l:'董事會 / 稽核委員會核准'},
   ];
   return(
     <div>
-      {/* FAIR 結果摘要（唯讀） */}
-      <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:10,marginBottom:16}}>
+      {/* A. FAIR 結果摘要 */}
+      <SectionLabel>FAIR 量化結果摘要 · FAIR Analysis Summary</SectionLabel>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:8,marginBottom:16}}>
         {[
-          ['EAL 均值',usd(risk.fairResult.mean)],
-          ['P50',usd(risk.fairResult.p50)],
-          ['P90',usd(risk.fairResult.p90)],
-          ['損失發生率',risk.fairResult.pLoss+'%'],
-        ].map(([k,v])=>(
-          <div key={k} style={{background:'#F6F4EF',border:`1px solid ${C.bdr}`,
-            borderRadius:4,padding:'10px 14px'}}>
-            <div style={{fontSize:10,color:C.fnt,marginBottom:3,fontFamily:'Inter,sans-serif'}}>{k}</div>
-            <div style={{fontSize:16,fontWeight:600,color:C.txt,fontFamily:'Inter,sans-serif'}}>{v}</div>
+          {zh:'預期年度損失',en:'Expected Annual Loss (EAL)',val:usd(r.mean),note:'長期平均年度暴露水準',hi:true},
+          {zh:'P50 中位損失',en:'50th Percentile',           val:usd(r.p50), note:'50% 情境低於此值'},
+          {zh:'P90 高風險門檻',en:'90th Percentile',         val:usd(r.p90), note:'90% 情境低於此值'},
+          {zh:'P95 尾端風險',en:'95th Percentile',           val:usd(r.p95), note:'5% 情境超過此值'},
+          {zh:'非零損失占比',en:'Non-Zero Loss Rate',         val:r.pLoss+'%',note:'產生損失的情境比例'},
+        ].map((m,i)=>(
+          <div key={i} style={{background:i===0?C.txt:'#F6F4EF',
+            border:`1px solid ${i===0?C.txt:C.bdr}`,borderRadius:4,padding:'10px 12px'}}>
+            <div style={{fontSize:9.5,color:i===0?'rgba(255,255,255,.55)':C.fnt,
+              marginBottom:2,fontFamily:'Inter,sans-serif',lineHeight:1.4}}>{m.zh}</div>
+            <div style={{fontSize:16,fontWeight:700,
+              color:i===0?'white':C.txt,fontFamily:'Inter,sans-serif',
+              letterSpacing:'-0.01em',marginBottom:2}}>{m.val}</div>
+            <div style={{fontSize:9.5,color:i===0?'rgba(255,255,255,.45)':C.fnt,
+              fontFamily:'Inter,sans-serif'}}>{m.note}</div>
           </div>
         ))}
       </div>
 
-      <SectionLabel>評估決策</SectionLabel>
+      {/* B. 風險門檻比較 */}
+      <SectionLabel>風險門檻比較 · Risk Threshold Comparison</SectionLabel>
+      <div style={{background:'#F6F4EF',border:`1px solid ${C.bdr}`,
+        borderRadius:4,padding:'14px 16px',marginBottom:16}}>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:12,marginBottom:12}}>
+          <div>
+            <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>
+              適用風險胃納門檻（EAL）
+            </div>
+            <TInput value={ed.appetiteThreshold} onChange={e=>upd('appetiteThreshold',e.target.value)}
+              placeholder="例：300000" type="number"/>
+            <div style={{fontSize:10,color:C.fnt,marginTop:3,fontFamily:'Inter,sans-serif'}}>
+              風險胃納（Risk Appetite）上限，以 USD 輸入
+            </div>
+          </div>
+          <div>
+            <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>
+              適用風險容忍度門檻（P90）
+            </div>
+            <TInput value={ed.toleranceThreshold} onChange={e=>upd('toleranceThreshold',e.target.value)}
+              placeholder="例：1000000" type="number"/>
+            <div style={{fontSize:10,color:C.fnt,marginTop:3,fontFamily:'Inter,sans-serif'}}>
+              風險容忍度（Risk Tolerance）上限，以 USD 輸入
+            </div>
+          </div>
+          <div>
+            <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>
+              門檻來源
+            </div>
+            <TSelect value={ed.thresholdSource} onChange={e=>upd('thresholdSource',e.target.value)}
+              options={[
+                {v:'policy',    l:'公司整體風險政策'},
+                {v:'bu',        l:'業務單位風險準則'},
+                {v:'risk_type', l:'風險類型特定標準'},
+                {v:'board',     l:'董事會核定標準'},
+                {v:'exception', l:'例外核准標準'},
+                {v:'manual',    l:'本次手動設定'},
+              ]} placeholder="— 選擇門檻來源 —"/>
+          </div>
+        </div>
+        {/* Threshold status */}
+        {(ealNum>0||p90Num>0)&&(
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+            {ealNum>0&&(
+              <div style={{padding:'10px 14px',borderRadius:4,
+                background:ealExceeds?C.redL:C.grnL,
+                border:`1px solid ${ealExceeds?C.red+'40':C.grn+'40'}`}}>
+                <div style={{fontSize:10.5,fontWeight:600,
+                  color:ealExceeds?C.red:C.grn,fontFamily:'Inter,sans-serif',marginBottom:3}}>
+                  {ealExceeds?'⚠ EAL 超出風險胃納':'✓ EAL 在風險胃納範圍內'}
+                </div>
+                <div style={{fontSize:11.5,color:C.sub,fontFamily:'Inter,sans-serif'}}>
+                  目前 EAL {usd(r.mean)} vs 門檻 {usd(ealNum)}
+                </div>
+              </div>
+            )}
+            {p90Num>0&&(
+              <div style={{padding:'10px 14px',borderRadius:4,
+                background:p90Exceeds?C.redL:C.grnL,
+                border:`1px solid ${p90Exceeds?C.red+'40':C.grn+'40'}`}}>
+                <div style={{fontSize:10.5,fontWeight:600,
+                  color:p90Exceeds?C.red:C.grn,fontFamily:'Inter,sans-serif',marginBottom:3}}>
+                  {p90Exceeds?'⚠ P90 超出風險容忍度':'✓ P90 在風險容忍度範圍內'}
+                </div>
+                <div style={{fontSize:11.5,color:C.sub,fontFamily:'Inter,sans-serif'}}>
+                  目前 P90 {usd(r.p90)} vs 門檻 {usd(p90Num)}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+        {/* System recommendation */}
+        {anyExceeds&&(
+          <div style={{marginTop:10,padding:'10px 14px',background:C.ambL,
+            borderRadius:4,border:`1px solid #DEC98A`}}>
+            <div style={{fontSize:10.5,fontWeight:600,color:C.amb,
+              fontFamily:'Inter,sans-serif',marginBottom:2}}>系統建議</div>
+            <div style={{fontSize:12.5,color:C.txt,fontFamily:'Inter,sans-serif'}}>
+              {ealExceeds&&p90Exceeds
+                ?'EAL 與 P90 均超出門檻，建議採取「處理（Treat）」或「轉移（Transfer）」策略。'
+                :ealExceeds
+                  ?'EAL 超出風險胃納，建議重新評估是否接受或採取控制措施。'
+                  :'P90 超出風險容忍度，尾端風險較高，建議考慮「處理」或「轉移」。'}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* C. 決策選項 */}
+      <SectionLabel>評估決策 · Evaluation Decision</SectionLabel>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:16}}>
         {decisions.map(d=>(
           <div key={d.v} onClick={()=>upd('decision',d.v)}
             style={{padding:'12px 14px',borderRadius:4,cursor:'pointer',
               border:`2px solid ${ed.decision===d.v?C.txt:C.bdr}`,
               background:ed.decision===d.v?C.txt:C.surf,transition:'all .12s'}}>
-            <div style={{fontSize:13,fontWeight:600,
-              color:ed.decision===d.v?'white':C.txt,fontFamily:'Inter,sans-serif',marginBottom:2}}>
-              {d.l}
+            <div style={{display:'flex',alignItems:'baseline',gap:6,marginBottom:3}}>
+              <span style={{fontSize:13,fontWeight:700,
+                color:ed.decision===d.v?'white':C.txt,fontFamily:'Inter,sans-serif'}}>{d.l}</span>
+              <span style={{fontSize:10,color:ed.decision===d.v?'rgba(255,255,255,.55)':C.fnt,
+                fontFamily:'Inter,sans-serif'}}>{d.en}</span>
             </div>
             <div style={{fontSize:11.5,
               color:ed.decision===d.v?'rgba(255,255,255,.65)':C.sub,fontFamily:'Inter,sans-serif'}}>
@@ -1728,21 +1921,79 @@ function TabEvaluation({risk,onUpdate}){
           </div>
         ))}
       </div>
+      {/* Decision guidance */}
+      <div style={{background:'#F6F4EF',border:`1px solid ${C.bdr}`,borderRadius:4,
+        padding:'10px 14px',marginBottom:16}}>
+        <div style={{fontSize:10,fontWeight:600,color:C.sub,letterSpacing:'0.1em',
+          textTransform:'uppercase',marginBottom:6,fontFamily:'Inter,sans-serif'}}>決策參考指引</div>
+        {[
+          '若 EAL 與 P90 皆低於適用門檻，可考慮接受（Accept）並持續監控。',
+          '若 P90 / P95 顯著高於門檻，且屬高尾端風險，建議處理（Treat）或轉移（Transfer）。',
+          '若風險暴露與業務收益不成比例，或業務活動本身可調整，可考慮迴避（Avoid）。',
+          '轉移（Transfer）適用於損失規模大但控制成本過高、可透過保險或合約安排轉嫁的情境。',
+        ].map((t,i)=>(
+          <div key={i} style={{fontSize:11.5,color:C.sub,lineHeight:1.7,
+            fontFamily:'Inter,sans-serif',display:'flex',gap:8,marginBottom:3}}>
+            <span style={{color:C.grn,flexShrink:0}}>·</span><span>{t}</span>
+          </div>
+        ))}
+      </div>
 
+      {/* D. 結構化評估理由 */}
+      <SectionLabel>評估記錄 · Evaluation Record</SectionLabel>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:14}}>
         <div>
-          <div style={{fontSize:11,color:C.sub,marginBottom:5,fontFamily:'Inter,sans-serif'}}>評估者</div>
-          <TInput value={ed.evaluator} onChange={e=>upd('evaluator',e.target.value)} placeholder="例：資訊安全長"/>
+          <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>評估者</div>
+          <TInput value={ed.evaluator} onChange={e=>upd('evaluator',e.target.value)} placeholder="例：風險長（CRO）"/>
         </div>
-        <div/>
+        <div>
+          <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>評估日期</div>
+          <TInput type="date" value={ed.evaluationDate} onChange={e=>upd('evaluationDate',e.target.value)}/>
+        </div>
         <div style={{gridColumn:'span 2'}}>
-          <div style={{fontSize:11,color:C.sub,marginBottom:5,fontFamily:'Inter,sans-serif'}}>評估理由</div>
+          <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>
+            評估依據（Basis of Evaluation）
+          </div>
+          <TInput value={ed.basis} onChange={e=>upd('basis',e.target.value)} rows={2}
+            placeholder="例：依據公司資訊安全風險政策 v2.1，本情境 P90 超出部門容忍度上限 $800K"/>
+        </div>
+        <div style={{gridColumn:'span 2'}}>
+          <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>
+            決策理由（Decision Rationale）
+          </div>
           <TInput value={ed.rationale} onChange={e=>upd('rationale',e.target.value)} rows={3}
-            placeholder="例：P90 損失達 $850K，超出組織可接受門檻 $500K，需採取控制措施"/>
+            placeholder="例：鑑於 EAL 達 $557K 且 P90 達 $1.56M，超出部門風險胃納 $300K，決定採取降低策略，優先強化存取控制與資料加密"/>
+        </div>
+        <div>
+          <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>
+            是否需升級審批
+          </div>
+          <TSelect value={ed.escalation} onChange={e=>upd('escalation',e.target.value)}
+            options={escalations} placeholder="— 選擇 —"/>
+        </div>
+        <div>
+          <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>
+            審批層級（如需要）
+          </div>
+          <TInput value={ed.approvalLevel} onChange={e=>upd('approvalLevel',e.target.value)}
+            placeholder="例：資訊安全委員會、副總裁層級" disabled={ed.escalation==='no'}/>
         </div>
       </div>
-      <div style={{display:'flex',justifyContent:'flex-end'}}>
-        <Btn ch="儲存評估" onClick={save} v="grn" disabled={!ed.decision}/>
+
+      <div style={{display:'flex',justifyContent:'flex-end',alignItems:'center',gap:12}}>
+        {saved&&!isDirty&&(
+          <span style={{fontSize:12,color:C.grn,fontFamily:'Inter,sans-serif',
+            display:'flex',alignItems:'center',gap:5}}>
+            <span style={{fontSize:15}}>✓</span> 已儲存
+          </span>
+        )}
+        {!isDirty&&!saved&&(
+          <span style={{fontSize:12,color:C.fnt,fontFamily:'Inter,sans-serif'}}>尚無變更</span>
+        )}
+        <Btn ch={saved&&!isDirty?'儲存完成 ✓':'儲存變更'}
+          onClick={isDirty?save:undefined} disabled={!isDirty||!ed.decision}
+          v={saved&&!isDirty?'ghost':'grn'}
+          style={saved&&!isDirty?{color:C.grn,borderColor:C.grn,background:'transparent',opacity:0.8}:{}}/>
       </div>
     </div>
   );
@@ -1750,69 +2001,117 @@ function TabEvaluation({risk,onUpdate}){
 
 /* Tab: 應對 */
 function TabTreatment({risk,onUpdate}){
-  const[ed,setEd]=useState(()=>({...risk.treatment}));
-  const upd=(k,v)=>setEd(p=>({...p,[k]:v}));
+  const init=()=>({...{
+    strategy:'',description:'',controls:'',owner:'',dueDate:'',
+    treatStatus:'not_started',budget:'',budgetType:'',
+    residualEAL:'',residualP90:'',residualP95:'',residualPLoss:'',
+    residualBasis:'',residualNarrative:'',
+    financeReviewer:'',financeStatus:'',approvedAmount:'',financeNotes:'',
+    insuranceNeeded:'no',insuranceNotes:'',annualizedCost:'',rationale:'',
+  },...risk.treatment});
+  const[ed,setEd]=useState(init);
+  const[saved,setSaved]=useState(false);
+  const upd=(k,v)=>{setEd(p=>({...p,[k]:v}));setSaved(false);};
+  const isDirty=useMemo(()=>{
+    const t=risk.treatment;
+    return ['strategy','description','controls','owner','dueDate','treatStatus',
+      'budget','budgetType','residualEAL','residualP90','residualP95','residualPLoss',
+      'residualBasis','residualNarrative','financeReviewer','financeStatus',
+      'approvedAmount','financeNotes','insuranceNeeded','insuranceNotes',
+      'annualizedCost','rationale'].some(k=>ed[k]!==t[k]);
+  },[ed,risk.treatment]);
   const save=()=>{
     const newStatus=ed.strategy?'in_treatment':risk.status;
     onUpdate({...risk,treatment:{...ed},status:newStatus,updatedAt:today()});
+    setSaved(true);
   };
   const overdue=ed.dueDate&&isOverdue(ed.dueDate)&&ed.treatStatus!=='completed';
   const strategies=[
-    {v:'reduce',  l:'降低 Reduce',   c:C.grn},
-    {v:'transfer',l:'轉移 Transfer', c:C.blu},
-    {v:'accept',  l:'接受 Accept',   c:C.fnt},
-    {v:'avoid',   l:'迴避 Avoid',    c:C.red},
+    {v:'reduce',  l:'降低',en:'Reduce',  c:C.grn, desc:'實施控制措施以降低損失頻率或規模'},
+    {v:'transfer',l:'轉移',en:'Transfer',c:C.blu, desc:'透過保險或合約安排轉移財務風險'},
+    {v:'accept',  l:'接受',en:'Accept',  c:C.fnt, desc:'在知情前提下接受當前風險水準'},
+    {v:'avoid',   l:'迴避',en:'Avoid',   c:C.red, desc:'停止或改變導致此風險的業務活動'},
   ];
+  const budgetTypes=[
+    {v:'capex',     l:'資本支出（CAPEX）'},
+    {v:'opex',      l:'營運費用（OPEX）'},
+    {v:'insurance', l:'保險費用（Insurance Premium）'},
+    {v:'project',   l:'專案費用（Project Budget）'},
+    {v:'other',     l:'其他'},
+  ];
+  const financeStatuses=[
+    {v:'pending',  l:'待審查'},
+    {v:'approved', l:'已核准'},
+    {v:'rejected', l:'未核准'},
+    {v:'revision', l:'需修改後重送'},
+  ];
+  const residualBases=[
+    {v:'fair_rerun',   l:'重新執行 FAIR 模擬'},
+    {v:'control_comp', l:'控制情境比較估算'},
+    {v:'insurance_est',l:'保險轉移估算'},
+    {v:'expert',       l:'專家判斷'},
+    {v:'other',        l:'其他'},
+  ];
+  const r=risk.fairResult;
   return(
     <div>
-      <SectionLabel>應對策略</SectionLabel>
-      <div style={{display:'flex',gap:8,marginBottom:16}}>
+      {/* A. 應對策略 */}
+      <SectionLabel>應對策略 · Treatment Strategy</SectionLabel>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8,marginBottom:16}}>
         {strategies.map(s=>(
           <div key={s.v} onClick={()=>upd('strategy',s.v)}
-            style={{flex:1,padding:'10px 8px',borderRadius:4,cursor:'pointer',
-              textAlign:'center',fontSize:12.5,fontWeight:600,fontFamily:'Inter,sans-serif',
+            style={{padding:'12px 10px',borderRadius:4,cursor:'pointer',textAlign:'center',
               border:`2px solid ${ed.strategy===s.v?s.c:C.bdr}`,
-              background:ed.strategy===s.v?s.c+'14':'white',
-              color:ed.strategy===s.v?s.c:C.sub,transition:'all .12s'}}>
-            {s.l}
+              background:ed.strategy===s.v?s.c+'14':'white',transition:'all .12s'}}>
+            <div style={{fontSize:14,fontWeight:700,color:ed.strategy===s.v?s.c:C.sub,
+              fontFamily:'Inter,sans-serif'}}>{s.l}</div>
+            <div style={{fontSize:9.5,color:C.fnt,fontFamily:'Inter,sans-serif',marginTop:1}}>{s.en}</div>
+            <div style={{fontSize:10.5,color:ed.strategy===s.v?s.c+'CC':C.fnt,
+              fontFamily:'Inter,sans-serif',marginTop:4,lineHeight:1.4}}>{s.desc}</div>
           </div>
         ))}
       </div>
 
-      <SectionLabel>應對計畫</SectionLabel>
+      {/* B. 應對計畫 */}
+      <SectionLabel>應對計畫 · Treatment Plan</SectionLabel>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:14}}>
         <div style={{gridColumn:'span 2'}}>
-          <div style={{fontSize:11,color:C.sub,marginBottom:5,fontFamily:'Inter,sans-serif'}}>控制措施描述</div>
+          <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>
+            控制措施描述（Treatment Description）
+          </div>
           <TInput value={ed.description} onChange={e=>upd('description',e.target.value)} rows={2}
-            placeholder="例：部署 EDR、強化 PAM、實施資料分類與 DLP 策略"/>
+            placeholder="例：強化特權存取管理（PAM）、部署端點偵測回應（EDR）、實施資料分類與 DLP 策略"/>
         </div>
         <div style={{gridColumn:'span 2'}}>
-          <div style={{fontSize:11,color:C.sub,marginBottom:5,fontFamily:'Inter,sans-serif'}}>具體控制項目</div>
+          <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>
+            具體控制項目（Specific Control Actions）
+          </div>
           <TInput value={ed.controls} onChange={e=>upd('controls',e.target.value)} rows={2}
-            placeholder="例：全面部署 MFA、網路分段、加密儲存、安全意識培訓"/>
+            placeholder="例：① 全面部署 MFA ② 網路分段 ③ 加密靜態資料 ④ 季度安全意識培訓"/>
         </div>
         <div>
-          <div style={{fontSize:11,color:C.sub,marginBottom:5,fontFamily:'Inter,sans-serif'}}>應對負責人</div>
-          <TInput value={ed.owner} onChange={e=>upd('owner',e.target.value)} placeholder="例：IT 安全主管"/>
+          <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>應對負責人</div>
+          <TInput value={ed.owner} onChange={e=>upd('owner',e.target.value)} placeholder="例：資訊安全主管"/>
         </div>
         <div>
-          <div style={{fontSize:11,color:C.sub,marginBottom:5,fontFamily:'Inter,sans-serif'}}>
+          <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>
             目標完成日 {overdue&&<span style={{color:C.red,fontSize:10}}>（已逾期）</span>}
           </div>
           <TInput type="date" value={ed.dueDate} onChange={e=>upd('dueDate',e.target.value)}/>
         </div>
         <div>
-          <div style={{fontSize:11,color:C.sub,marginBottom:5,fontFamily:'Inter,sans-serif'}}>預估預算</div>
-          <TInput value={ed.budget} onChange={e=>upd('budget',e.target.value)} placeholder="例：$120,000"/>
+          <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>預估總預算</div>
+          <TInput value={ed.budget} onChange={e=>upd('budget',e.target.value)} placeholder="例：$150,000"/>
         </div>
         <div>
-          <div style={{fontSize:11,color:C.sub,marginBottom:5,fontFamily:'Inter,sans-serif'}}>預期殘餘風險</div>
-          <TInput value={ed.expectedResidual} onChange={e=>upd('expectedResidual',e.target.value)}
-            placeholder="例：措施完成後 EAL 預計降至 $80K"/>
+          <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>預算類型</div>
+          <TSelect value={ed.budgetType} onChange={e=>upd('budgetType',e.target.value)}
+            options={budgetTypes} placeholder="— 選擇預算類型 —"/>
         </div>
       </div>
 
-      <SectionLabel>執行狀態</SectionLabel>
+      {/* C. 執行狀態 */}
+      <SectionLabel>執行狀態 · Execution Status</SectionLabel>
       <div style={{display:'flex',gap:8,marginBottom:16}}>
         {Object.entries(TREAT_STATUS).map(([v,s])=>(
           <div key={v} onClick={()=>upd('treatStatus',v)}
@@ -1826,8 +2125,124 @@ function TabTreatment({risk,onUpdate}){
         ))}
       </div>
 
-      <div style={{display:'flex',justifyContent:'flex-end'}}>
-        <Btn ch="儲存應對計畫" onClick={save} v="grn"/>
+      {/* D. 預期殘餘風險（結構化前後對比）*/}
+      <SectionLabel>預期殘餘風險 · Expected Residual Risk</SectionLabel>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:14}}>
+        {/* Current */}
+        <div style={{background:'#F6F4EF',border:`1px solid ${C.bdr}`,borderRadius:4,padding:'14px 16px'}}>
+          <div style={{fontSize:10.5,fontWeight:600,color:C.sub,letterSpacing:'0.08em',
+            textTransform:'uppercase',marginBottom:10,fontFamily:'Inter,sans-serif'}}>
+            目前風險水準 · Current Risk
+          </div>
+          {r?[
+            ['EAL 均值',     usd(r.mean)],
+            ['P90',          usd(r.p90)],
+            ['P95',          usd(r.p95)],
+            ['非零損失率',    r.pLoss+'%'],
+          ].map(([k,v])=>(
+            <div key={k} style={{display:'flex',justifyContent:'space-between',
+              padding:'5px 0',borderBottom:`1px solid ${C.bdr}`,
+              fontSize:12,fontFamily:'Inter,sans-serif'}}>
+              <span style={{color:C.sub}}>{k}</span>
+              <strong style={{color:C.txt}}>{v}</strong>
+            </div>
+          )):(
+            <div style={{fontSize:12,color:C.fnt,fontFamily:'Inter,sans-serif'}}>
+              請先執行 FAIR 模擬
+            </div>
+          )}
+        </div>
+        {/* Expected Residual */}
+        <div style={{background:C.grnL,border:`1px solid ${C.grn}30`,borderRadius:4,padding:'14px 16px'}}>
+          <div style={{fontSize:10.5,fontWeight:600,color:C.grn,letterSpacing:'0.08em',
+            textTransform:'uppercase',marginBottom:10,fontFamily:'Inter,sans-serif'}}>
+            預期殘餘風險 · Expected Residual
+          </div>
+          {[
+            ['預期殘餘 EAL',  'residualEAL',  '例：$220,000'],
+            ['預期殘餘 P90',  'residualP90',  '例：$780,000'],
+            ['預期殘餘 P95',  'residualP95',  '例：$1,100,000'],
+            ['預期非零損失率','residualPLoss', '例：35%'],
+          ].map(([lbl,key,ph])=>(
+            <div key={key} style={{marginBottom:8}}>
+              <div style={{fontSize:10,color:C.grn,marginBottom:2,fontFamily:'Inter,sans-serif'}}>{lbl}</div>
+              <TInput value={ed[key]} onChange={e=>upd(key,e.target.value)} placeholder={ph} sm/>
+            </div>
+          ))}
+        </div>
+        <div>
+          <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>
+            殘餘風險估算依據
+          </div>
+          <TSelect value={ed.residualBasis} onChange={e=>upd('residualBasis',e.target.value)}
+            options={residualBases} placeholder="— 選擇估算依據 —"/>
+        </div>
+        <div style={{gridColumn:'span 1'}}/>
+        <div style={{gridColumn:'span 2'}}>
+          <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>
+            預期殘餘風險說明（Residual Risk Narrative）
+          </div>
+          <TInput value={ed.residualNarrative} onChange={e=>upd('residualNarrative',e.target.value)} rows={2}
+            placeholder="例：完成 MFA、PAM 與郵件 DLP 後，預估 EAL 可由 $557.6K 降至 $220K，P90 由 $1.56M 降至 $780K，預期回到可接受範圍"/>
+        </div>
+      </div>
+
+      {/* E. 財務協作 */}
+      <SectionLabel>財務審查與協作 · Finance Review</SectionLabel>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:14}}>
+        <div>
+          <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>財務審查人</div>
+          <TInput value={ed.financeReviewer} onChange={e=>upd('financeReviewer',e.target.value)}
+            placeholder="例：財務長、財務副總"/>
+        </div>
+        <div>
+          <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>財務審查狀態</div>
+          <TSelect value={ed.financeStatus} onChange={e=>upd('financeStatus',e.target.value)}
+            options={financeStatuses} placeholder="— 選擇狀態 —"/>
+        </div>
+        <div>
+          <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>核准金額</div>
+          <TInput value={ed.approvedAmount} onChange={e=>upd('approvedAmount',e.target.value)}
+            placeholder="例：$120,000"/>
+        </div>
+        <div>
+          <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>預估年度成本</div>
+          <TInput value={ed.annualizedCost} onChange={e=>upd('annualizedCost',e.target.value)}
+            placeholder="例：$40,000/年（含維護）"/>
+        </div>
+        <div>
+          <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>是否需保險評估</div>
+          <TSelect value={ed.insuranceNeeded} onChange={e=>upd('insuranceNeeded',e.target.value)}
+            options={[{v:'no',l:'不需要'},{v:'yes',l:'需要評估'}]} placeholder="— 選擇 —"/>
+        </div>
+        {ed.insuranceNeeded==='yes'&&(
+          <div>
+            <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>保險方案說明</div>
+            <TInput value={ed.insuranceNotes} onChange={e=>upd('insuranceNotes',e.target.value)}
+              placeholder="例：評估網路責任險，保額 $5M，年費約 $25K"/>
+          </div>
+        )}
+        <div style={{gridColumn:'span 2'}}>
+          <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>財務備註</div>
+          <TInput value={ed.financeNotes} onChange={e=>upd('financeNotes',e.target.value)} rows={2}
+            placeholder="例：本次預算已列入 Q3 資安強化專案，需財務長簽核後始可動支"/>
+        </div>
+      </div>
+
+      <div style={{display:'flex',justifyContent:'flex-end',alignItems:'center',gap:12}}>
+        {saved&&!isDirty&&(
+          <span style={{fontSize:12,color:C.grn,fontFamily:'Inter,sans-serif',
+            display:'flex',alignItems:'center',gap:5}}>
+            <span style={{fontSize:15}}>✓</span> 已儲存
+          </span>
+        )}
+        {!isDirty&&!saved&&(
+          <span style={{fontSize:12,color:C.fnt,fontFamily:'Inter,sans-serif'}}>尚無變更</span>
+        )}
+        <Btn ch={saved&&!isDirty?'儲存完成 ✓':'儲存變更'}
+          onClick={isDirty?save:undefined} disabled={!isDirty}
+          v={saved&&!isDirty?'ghost':'grn'}
+          style={saved&&!isDirty?{color:C.grn,borderColor:C.grn,background:'transparent',opacity:0.8}:{}}/>
       </div>
     </div>
   );
@@ -1835,17 +2250,30 @@ function TabTreatment({risk,onUpdate}){
 
 /* Tab: 監控 */
 function TabMonitoring({risk,onUpdate}){
-  const[ed,setEd]=useState(()=>({...risk.monitoring}));
-  const upd=(k,v)=>setEd(p=>({...p,[k]:v}));
+  const init=()=>({...{
+    reviewCycle:'quarterly',nextReview:'',monitoringOwner:'',
+    treatmentProgress:'',assumptionChanged:'no',assumptionNotes:'',
+    residualWithinThreshold:'',refreshNeeded:'no',
+    changeLog:'',notes:'',lastReviewed:'',
+  },...risk.monitoring});
+  const[ed,setEd]=useState(init);
+  const[saved,setSaved]=useState(false);
+  const upd=(k,v)=>{setEd(p=>({...p,[k]:v}));setSaved(false);};
+  const isDirty=useMemo(()=>{
+    const m=risk.monitoring;
+    return ['reviewCycle','nextReview','monitoringOwner','treatmentProgress',
+      'assumptionChanged','assumptionNotes','residualWithinThreshold',
+      'refreshNeeded','changeLog','notes'].some(k=>ed[k]!==m[k]);
+  },[ed,risk.monitoring]);
   const save=()=>{
     const newStatus=risk.treatment.treatStatus==='completed'?'monitoring':risk.status;
     onUpdate({...risk,monitoring:{...ed,lastReviewed:today()},
       status:newStatus,updatedAt:today()});
+    setSaved(true);
   };
   const closeRisk=()=>{
-    if(window.confirm('確定要結案此風險？結案後仍可重新開啟。')){
+    if(window.confirm('確定要結案此風險？'))
       onUpdate({...risk,status:'closed',updatedAt:today()});
-    }
   };
   const cycles=[
     {v:'monthly',  l:'每月'},
@@ -1855,14 +2283,40 @@ function TabMonitoring({risk,onUpdate}){
   ];
   return(
     <div>
-      <SectionLabel>複查設定</SectionLabel>
-      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:16}}>
+      {/* 應對進度摘要 */}
+      {risk.treatment.strategy&&(
+        <div style={{background:'#F6F4EF',border:`1px solid ${C.bdr}`,
+          borderRadius:4,padding:'12px 16px',marginBottom:14}}>
+          <div style={{fontSize:10,fontWeight:600,color:C.sub,letterSpacing:'0.1em',
+            textTransform:'uppercase',marginBottom:8,fontFamily:'Inter,sans-serif'}}>
+            應對計畫現況
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:10}}>
+            {[
+              ['應對策略', {reduce:'降低',transfer:'轉移',accept:'接受',avoid:'迴避'}[risk.treatment.strategy]||risk.treatment.strategy],
+              ['執行狀態', TREAT_STATUS[risk.treatment.treatStatus]?.label||'—'],
+              ['目標完成日', fmtDate(risk.treatment.dueDate)||'—'],
+              ['應對負責人', risk.treatment.owner||'—'],
+              ['財務審查狀態', {pending:'待審查',approved:'已核准',rejected:'未核准',revision:'需修改'}[risk.treatment.financeStatus]||'—'],
+              ['核准預算', risk.treatment.approvedAmount||'—'],
+            ].map(([k,v])=>(
+              <div key={k} style={{fontSize:12,fontFamily:'Inter,sans-serif'}}>
+                <span style={{color:C.fnt}}>{k}：</span>
+                <strong style={{color:C.txt}}>{v}</strong>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <SectionLabel>監控設定 · Monitoring Configuration</SectionLabel>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:14}}>
         <div>
           <div style={{fontSize:11,color:C.sub,marginBottom:6,fontFamily:'Inter,sans-serif'}}>複查週期</div>
-          <div style={{display:'flex',gap:6}}>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:6}}>
             {cycles.map(c=>(
               <div key={c.v} onClick={()=>upd('reviewCycle',c.v)}
-                style={{flex:1,padding:'7px 4px',borderRadius:3,cursor:'pointer',
+                style={{padding:'7px 4px',borderRadius:3,cursor:'pointer',
                   textAlign:'center',fontSize:11.5,fontFamily:'Inter,sans-serif',fontWeight:500,
                   border:`2px solid ${ed.reviewCycle===c.v?C.txt:C.bdr}`,
                   background:ed.reviewCycle===c.v?C.txt:'white',
@@ -1873,26 +2327,79 @@ function TabMonitoring({risk,onUpdate}){
           </div>
         </div>
         <div>
-          <div style={{fontSize:11,color:C.sub,marginBottom:5,fontFamily:'Inter,sans-serif'}}>下次複查日</div>
+          <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>下次複查日</div>
           <TInput type="date" value={ed.nextReview} onChange={e=>upd('nextReview',e.target.value)}/>
         </div>
+        <div>
+          <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>監控負責人</div>
+          <TInput value={ed.monitoringOwner} onChange={e=>upd('monitoringOwner',e.target.value)}
+            placeholder="例：風險管理部門主管"/>
+        </div>
+        <div>
+          <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>
+            應對措施進度（%）
+          </div>
+          <TInput value={ed.treatmentProgress} onChange={e=>upd('treatmentProgress',e.target.value)}
+            placeholder="例：65（表示 65% 完成）" type="number"/>
+        </div>
+        <div>
+          <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>
+            殘餘風險是否在門檻內
+          </div>
+          <TSelect value={ed.residualWithinThreshold}
+            onChange={e=>upd('residualWithinThreshold',e.target.value)}
+            options={[{v:'yes',l:'是，已在容忍範圍內'},{v:'no',l:'否，仍超出門檻'},{v:'pending',l:'尚未評估'}]}
+            placeholder="— 選擇 —"/>
+        </div>
+        <div>
+          <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>
+            是否需重新執行 FAIR 分析
+          </div>
+          <TSelect value={ed.refreshNeeded} onChange={e=>upd('refreshNeeded',e.target.value)}
+            options={[{v:'no',l:'不需要'},{v:'yes',l:'需要（假設條件已變更）'}]}
+            placeholder="— 選擇 —"/>
+        </div>
+        <div>
+          <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>
+            假設條件是否有重大變更
+          </div>
+          <TSelect value={ed.assumptionChanged} onChange={e=>upd('assumptionChanged',e.target.value)}
+            options={[{v:'no',l:'無重大變更'},{v:'yes',l:'有重大變更，需更新分析'}]}
+            placeholder="— 選擇 —"/>
+        </div>
+        {ed.assumptionChanged==='yes'&&(
+          <div>
+            <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>
+              變更說明
+            </div>
+            <TInput value={ed.assumptionNotes} onChange={e=>upd('assumptionNotes',e.target.value)} rows={2}
+              placeholder="例：新增第三方廠商整合，威脅接觸頻率預估提升"/>
+          </div>
+        )}
         <div style={{gridColumn:'span 2'}}>
-          <div style={{fontSize:11,color:C.sub,marginBottom:5,fontFamily:'Inter,sans-serif'}}>監控備註</div>
+          <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>
+            重要事項與變更記錄（Change Log）
+          </div>
+          <TInput value={ed.changeLog} onChange={e=>upd('changeLog',e.target.value)} rows={3}
+            placeholder={`例：\n2026-03 MFA 部署完成，覆蓋率達 95%\n2026-04 網路分段實施，待滲透測試驗證\n2026-05 次季度複查預定 2026-07-15`}/>
+        </div>
+        <div style={{gridColumn:'span 2'}}>
+          <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>監控備註</div>
           <TInput value={ed.notes} onChange={e=>upd('notes',e.target.value)} rows={2}
             placeholder="例：每月由安全團隊提交 KRI 報告；控制效能複查列入季度稽核"/>
         </div>
       </div>
 
-      {/* Timeline */}
+      {/* 風險生命週期 */}
       <SectionLabel>風險生命週期</SectionLabel>
       <div style={{marginBottom:16}}>
         {[
-          {step:0,label:'已登記',     date:risk.createdAt},
-          {step:1,label:'FAIR 分析完成',date:risk.fairResult?risk.updatedAt:null},
-          {step:2,label:'評估決策',   date:risk.evaluation.reviewedAt},
-          {step:3,label:'應對計畫',   date:risk.treatment.dueDate?risk.updatedAt:null},
-          {step:4,label:'控制措施完成',date:risk.treatment.treatStatus==='completed'?risk.updatedAt:null},
-          {step:5,label:'監控中',     date:risk.status==='monitoring'?risk.updatedAt:null},
+          {step:0,label:'已登記',       date:risk.createdAt},
+          {step:1,label:'FAIR 分析完成', date:risk.fairResult?risk.updatedAt:null},
+          {step:2,label:'評估決策完成',  date:risk.evaluation.reviewedAt},
+          {step:3,label:'應對計畫建立',  date:risk.treatment.dueDate?risk.updatedAt:null},
+          {step:4,label:'控制措施完成',  date:risk.treatment.treatStatus==='completed'?risk.updatedAt:null},
+          {step:5,label:'進入監控',      date:risk.status==='monitoring'?risk.updatedAt:null},
         ].map((s,i)=>{
           const done=STATUS_CFG[risk.status]?.step>=s.step;
           return(
@@ -1904,8 +2411,8 @@ function TabMonitoring({risk,onUpdate}){
                 {done?'✓':i+1}
               </div>
               <div style={{fontSize:12.5,color:done?C.txt:C.fnt,fontFamily:'Inter,sans-serif',
-                fontWeight:done?500:400}}>{s.label}</div>
-              {s.date&&<div style={{fontSize:11,color:C.fnt,fontFamily:'Inter,sans-serif',marginLeft:'auto'}}>
+                fontWeight:done?500:400,flex:1}}>{s.label}</div>
+              {s.date&&<div style={{fontSize:11,color:C.fnt,fontFamily:'Inter,sans-serif'}}>
                 {fmtDate(s.date)}
               </div>}
             </div>
@@ -1914,13 +2421,233 @@ function TabMonitoring({risk,onUpdate}){
       </div>
 
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-        <Btn ch="結案此風險" onClick={closeRisk} v="ghost"
-          style={{color:C.sub,fontSize:12}}/>
-        <Btn ch="儲存監控設定" onClick={save} v="grn"/>
+        <Btn ch="結案此風險" onClick={closeRisk} v="ghost" style={{color:C.sub,fontSize:12}}/>
+        <div style={{display:'flex',alignItems:'center',gap:12}}>
+          {saved&&!isDirty&&(
+            <span style={{fontSize:12,color:C.grn,fontFamily:'Inter,sans-serif',
+              display:'flex',alignItems:'center',gap:5}}>
+              <span style={{fontSize:15}}>✓</span> 已儲存
+            </span>
+          )}
+          {!isDirty&&!saved&&(
+            <span style={{fontSize:12,color:C.fnt,fontFamily:'Inter,sans-serif'}}>尚無變更</span>
+          )}
+          <Btn ch={saved&&!isDirty?'儲存完成 ✓':'儲存變更'}
+            onClick={isDirty?save:undefined} disabled={!isDirty}
+            v={saved&&!isDirty?'ghost':'grn'}
+            style={saved&&!isDirty?{color:C.grn,borderColor:C.grn,background:'transparent',opacity:0.8}:{}}/>
+        </div>
       </div>
     </div>
   );
 }
+
+/* Tab: 決策摘要 */
+function TabDecision({risk}){
+  const r=risk.fairResult;
+  const ev=risk.evaluation;
+  const tr=risk.treatment;
+  const mo=risk.monitoring;
+  const sc=risk.scenario;
+  const decLabel={accept:'接受 (Accept)',treat:'處理 (Treat)',
+    transfer:'轉移 (Transfer)',avoid:'迴避 (Avoid)'};
+  const statusSummary=()=>{
+    if(risk.status==='closed')return{text:'此風險已結案。',color:C.fnt};
+    if(risk.status==='monitoring'){
+      if(mo.residualWithinThreshold==='yes')
+        return{text:'應對措施已執行，殘餘風險已回到容忍範圍，目前持續監控中。',color:C.grn};
+      return{text:'應對措施執行中，殘餘風險尚未回到容忍範圍，持續監控。',color:C.amb};
+    }
+    if(risk.status==='in_treatment')
+      return{text:'此風險目前超出風險胃納／容忍度，應對措施正在執行中。',color:C.red};
+    if(risk.status==='evaluated')
+      return{text:'評估決策已完成，待建立應對計畫。',color:C.amb};
+    if(risk.status==='analyzed')
+      return{text:'FAIR 分析已完成，尚待評估決策。',color:C.fnt};
+    return{text:'此風險已登記，尚待完成 FAIR 分析與評估。',color:C.fnt};
+  };
+  const {text:statusText,color:statusColor}=statusSummary();
+
+  if(!r){
+    return(
+      <div style={{textAlign:'center',padding:'48px 20px',color:C.fnt,fontFamily:'Inter,sans-serif'}}>
+        請先完成 FAIR 分析以產生決策摘要。
+      </div>
+    );
+  }
+
+  return(
+    <div>
+      {/* 頂部管理意見 */}
+      <div style={{background:C.txt,borderRadius:4,padding:'18px 22px',marginBottom:16,color:'white'}}>
+        <div style={{fontSize:10,fontWeight:600,letterSpacing:'0.14em',
+          textTransform:'uppercase',opacity:0.55,marginBottom:6,fontFamily:'Inter,sans-serif'}}>
+          管理層摘要 · Executive Summary
+        </div>
+        <p style={{fontSize:14,lineHeight:1.85,fontFamily:'Inter,sans-serif',opacity:0.92}}>
+          {statusText}
+          {ev.decision&&(
+            <span> 評估決策為「<strong>{decLabel[ev.decision]||ev.decision}</strong>」
+            {ev.evaluator&&`，由 ${ev.evaluator}`}
+            {ev.evaluationDate&&` 於 ${fmtDate(ev.evaluationDate)} 完成評估`}。</span>
+          )}
+          {tr.residualNarrative&&(
+            <span> {tr.residualNarrative}</span>
+          )}
+        </p>
+      </div>
+
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
+        {/* A. 情境摘要 */}
+        <div style={{background:C.surf,border:`1px solid ${C.bdr}`,borderRadius:4,padding:'14px 16px'}}>
+          <div style={{fontSize:10,fontWeight:600,color:C.sub,letterSpacing:'0.1em',
+            textTransform:'uppercase',marginBottom:10,fontFamily:'Inter,sans-serif'}}>
+            風險情境
+          </div>
+          {[
+            ['受影響資產',sc.asset||'—'],
+            ['威脅來源',  sc.actor||'—'],
+            ['威脅行為',  sc.event||'—'],
+            ['損失事件',  sc.loss||'—'],
+          ].map(([k,v])=>(
+            <div key={k} style={{padding:'6px 0',borderBottom:`1px solid ${C.bdr}`}}>
+              <div style={{fontSize:10,color:C.fnt,marginBottom:1,fontFamily:'Inter,sans-serif'}}>{k}</div>
+              <div style={{fontSize:12.5,color:C.txt,fontFamily:'Inter,sans-serif'}}>{v}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* B. FAIR 結果 */}
+        <div style={{background:C.surf,border:`1px solid ${C.bdr}`,borderRadius:4,padding:'14px 16px'}}>
+          <div style={{fontSize:10,fontWeight:600,color:C.sub,letterSpacing:'0.1em',
+            textTransform:'uppercase',marginBottom:10,fontFamily:'Inter,sans-serif'}}>
+            FAIR 量化結果
+          </div>
+          {[
+            ['預期年度損失（EAL）',usd(r.mean),'長期平均年度暴露水準'],
+            ['P50 中位損失',       usd(r.p50), '50% 情境低於此值'],
+            ['P90 高風險門檻',     usd(r.p90), '90% 情境低於此值'],
+            ['P95 尾端風險',       usd(r.p95), '5% 情境超過此值'],
+            ['非零損失占比',       r.pLoss+'%','產生損失的情境比例'],
+          ].map(([k,v,note])=>(
+            <div key={k} style={{display:'flex',justifyContent:'space-between',
+              alignItems:'baseline',padding:'5px 0',borderBottom:`1px solid ${C.bdr}`}}>
+              <div>
+                <div style={{fontSize:12,color:C.txt,fontFamily:'Inter,sans-serif'}}>{k}</div>
+                <div style={{fontSize:9.5,color:C.fnt,fontFamily:'Inter,sans-serif'}}>{note}</div>
+              </div>
+              <strong style={{fontSize:13,color:C.txt,fontFamily:'Inter,sans-serif'}}>{v}</strong>
+            </div>
+          ))}
+        </div>
+
+        {/* C. 評估摘要 */}
+        <div style={{background:C.surf,border:`1px solid ${C.bdr}`,borderRadius:4,padding:'14px 16px'}}>
+          <div style={{fontSize:10,fontWeight:600,color:C.sub,letterSpacing:'0.1em',
+            textTransform:'uppercase',marginBottom:10,fontFamily:'Inter,sans-serif'}}>
+            評估決策
+          </div>
+          {[
+            ['最終決策',    ev.decision?decLabel[ev.decision]:'尚未完成'],
+            ['風險胃納門檻（EAL）', ev.appetiteThreshold?usd(parseFloat(ev.appetiteThreshold)):'—'],
+            ['容忍度門檻（P90）',   ev.toleranceThreshold?usd(parseFloat(ev.toleranceThreshold)):'—'],
+            ['評估者',      ev.evaluator||'—'],
+            ['評估日期',    ev.evaluationDate?fmtDate(ev.evaluationDate):'—'],
+            ['是否需升級',  {no:'不需要',dept:'部門主管',exec:'高階主管',board:'董事會'}[ev.escalation]||'—'],
+          ].map(([k,v])=>(
+            <div key={k} style={{display:'flex',justifyContent:'space-between',
+              padding:'5px 0',borderBottom:`1px solid ${C.bdr}`,fontSize:12,fontFamily:'Inter,sans-serif'}}>
+              <span style={{color:C.sub}}>{k}</span>
+              <strong style={{color:C.txt}}>{v}</strong>
+            </div>
+          ))}
+          {ev.rationale&&(
+            <div style={{marginTop:8,padding:'8px 10px',background:'#F6F4EF',borderRadius:3}}>
+              <div style={{fontSize:10,color:C.fnt,marginBottom:3,fontFamily:'Inter,sans-serif'}}>決策理由</div>
+              <p style={{fontSize:11.5,color:C.sub,lineHeight:1.65,fontFamily:'Inter,sans-serif'}}>
+                {ev.rationale}
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* D. 應對摘要 */}
+        <div style={{background:C.surf,border:`1px solid ${C.bdr}`,borderRadius:4,padding:'14px 16px'}}>
+          <div style={{fontSize:10,fontWeight:600,color:C.sub,letterSpacing:'0.1em',
+            textTransform:'uppercase',marginBottom:10,fontFamily:'Inter,sans-serif'}}>
+            應對計畫
+          </div>
+          {tr.strategy?(
+            <>
+              {[
+                ['應對策略',   {reduce:'降低',transfer:'轉移',accept:'接受',avoid:'迴避'}[tr.strategy]||tr.strategy],
+                ['執行狀態',   TREAT_STATUS[tr.treatStatus]?.label||'—'],
+                ['應對負責人', tr.owner||'—'],
+                ['目標完成日', fmtDate(tr.dueDate)||'—'],
+                ['預估預算',   tr.budget||'—'],
+                ['財務審查',   {pending:'待審查',approved:'已核准',rejected:'未核准',revision:'需修改'}[tr.financeStatus]||'—'],
+                ['核准金額',   tr.approvedAmount||'—'],
+              ].map(([k,v])=>(
+                <div key={k} style={{display:'flex',justifyContent:'space-between',
+                  padding:'5px 0',borderBottom:`1px solid ${C.bdr}`,fontSize:12,fontFamily:'Inter,sans-serif'}}>
+                  <span style={{color:C.sub}}>{k}</span>
+                  <strong style={{color:C.txt}}>{v}</strong>
+                </div>
+              ))}
+              {tr.residualNarrative&&(
+                <div style={{marginTop:8,padding:'8px 10px',background:C.grnL,borderRadius:3}}>
+                  <div style={{fontSize:10,color:C.grn,marginBottom:3,fontFamily:'Inter,sans-serif'}}>
+                    預期殘餘風險說明
+                  </div>
+                  <p style={{fontSize:11.5,color:C.grn+'CC',lineHeight:1.65,fontFamily:'Inter,sans-serif'}}>
+                    {tr.residualNarrative}
+                  </p>
+                </div>
+              )}
+            </>
+          ):(
+            <div style={{fontSize:12,color:C.fnt,fontFamily:'Inter,sans-serif'}}>尚未建立應對計畫</div>
+          )}
+        </div>
+
+        {/* E. 監控摘要 */}
+        <div style={{background:C.surf,border:`1px solid ${C.bdr}`,borderRadius:4,
+          padding:'14px 16px',gridColumn:'span 2'}}>
+          <div style={{fontSize:10,fontWeight:600,color:C.sub,letterSpacing:'0.1em',
+            textTransform:'uppercase',marginBottom:10,fontFamily:'Inter,sans-serif'}}>
+            監控狀態
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:10}}>
+            {[
+              ['複查週期', {monthly:'每月',quarterly:'每季',biannual:'每半年',annual:'每年'}[mo.reviewCycle]||'—'],
+              ['下次複查日', mo.nextReview?fmtDate(mo.nextReview):'—'],
+              ['監控負責人', mo.monitoringOwner||'—'],
+              ['殘餘風險狀態', {yes:'已在容忍範圍',no:'仍超出門檻',pending:'尚未評估'}[mo.residualWithinThreshold]||'—'],
+            ].map(([k,v])=>(
+              <div key={k} style={{padding:'8px 10px',background:'#F6F4EF',borderRadius:3}}>
+                <div style={{fontSize:9.5,color:C.fnt,marginBottom:3,fontFamily:'Inter,sans-serif'}}>{k}</div>
+                <div style={{fontSize:12.5,fontWeight:500,color:C.txt,fontFamily:'Inter,sans-serif'}}>{v}</div>
+              </div>
+            ))}
+          </div>
+          {mo.changeLog&&(
+            <div style={{marginTop:10,padding:'8px 10px',background:'#F6F4EF',borderRadius:3}}>
+              <div style={{fontSize:10,color:C.fnt,marginBottom:4,fontFamily:'Inter,sans-serif',
+                fontWeight:600}}>變更記錄</div>
+              <pre style={{fontSize:11.5,color:C.sub,lineHeight:1.7,fontFamily:'Inter,sans-serif',
+                whiteSpace:'pre-wrap'}}>{mo.changeLog}</pre>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div style={{marginTop:16,display:'flex',justifyContent:'flex-end'}}>
+        <Btn ch="🖨 匯出 PDF 報告" onClick={()=>window.print()} v="red"/>
+      </div>
+    </div>
+  );
+}
+
 
 /* ═══════════════════════════════════════════════════
    RISK DETAIL VIEW
@@ -1929,10 +2656,11 @@ function RiskDetail({risk,onUpdate,onBack}){
   const[tab,setTab]=useState('overview');
   const TABS=[
     {id:'overview',   label:'總覽'},
-    {id:'fair',       label:'FAIR 分析',     badge:risk.fairResult?'完成':null},
-    {id:'evaluation', label:'評估',          badge:risk.evaluation.decision?risk.evaluation.decision:null},
-    {id:'treatment',  label:'應對',          badge:risk.treatment.treatStatus?TREAT_STATUS[risk.treatment.treatStatus]?.label:null},
+    {id:'fair',       label:'FAIR 分析',  badge:risk.fairResult?'完成':null},
+    {id:'evaluation', label:'評估',       badge:risk.evaluation.decision?risk.evaluation.decision:null},
+    {id:'treatment',  label:'應對',       badge:risk.treatment.treatStatus?TREAT_STATUS[risk.treatment.treatStatus]?.label:null},
     {id:'monitoring', label:'監控'},
+    {id:'decision',   label:'決策摘要',   badge:risk.evaluation.decision?'完成':null},
   ];
   const decMap={accept:'接受',treat:'處理',transfer:'轉移',avoid:'迴避'};
   return(
@@ -2008,6 +2736,7 @@ function RiskDetail({risk,onUpdate,onBack}){
         {tab==='evaluation'&&<TabEvaluation  risk={risk} onUpdate={onUpdate}/>}
         {tab==='treatment' &&<TabTreatment   risk={risk} onUpdate={onUpdate}/>}
         {tab==='monitoring'&&<TabMonitoring  risk={risk} onUpdate={onUpdate}/>}
+        {tab==='decision'  &&<TabDecision    risk={risk}/>}
       </div>
     </div>
   );
@@ -2099,7 +2828,7 @@ function App(){
         {/* Page title */}
         {view==='register'&&(
           <div style={{marginBottom:20}}>
-            <h1 className="serif" style={{fontSize:28,fontWeight:300,color:C.txt,
+            <h1 className="serif" style={{fontSize:28,fontWeight:700,color:C.txt,
               letterSpacing:'-0.01em',lineHeight:1.15}}>風險登記冊</h1>
             <p style={{fontSize:13,color:C.sub,marginTop:4,fontFamily:'Inter,sans-serif'}}>
               管理組織所有 FAIR 量化風險 · 點擊風險列開啟詳細分析
