@@ -149,11 +149,23 @@ function mkExc(sorted){
   pts.push({loss:sorted[N-1],pct:0});
   return pts;
 }
+/* TWD formatter — 千分位 + 中文大單位 (≥百萬才縮寫) */
 const usd=v=>{
-  if(!v||isNaN(v))return'—';
-  if(v>=1e6)return`$${(v/1e6).toFixed(2)}M`;
-  if(v>=1e3)return`$${(v/1e3).toFixed(1)}K`;
-  return`$${Math.round(v)}`;
+  if(v===null||v===undefined||v===''||isNaN(Number(v)))return'—';
+  const n=Math.round(Number(v));
+  if(n===0)return'NT$0';
+  const abs=Math.abs(n),sign=n<0?'-':'';
+  if(abs>=1e12)return sign+'NT$'+Math.round(abs/1e12).toLocaleString('zh-TW')+'兆';
+  if(abs>=1e8) return sign+'NT$'+Math.round(abs/1e8).toLocaleString('zh-TW')+'億';
+  if(abs>=1e7) return sign+'NT$'+Math.round(abs/1e7).toLocaleString('zh-TW')+'千萬';
+  if(abs>=1e6) return sign+'NT$'+Math.round(abs/1e6).toLocaleString('zh-TW')+'百萬';
+  return sign+'NT$'+abs.toLocaleString('zh-TW');
+};
+/* Format a user-typed string (may contain $ , NT$) into formatted display */
+const fmtTWD=s=>{
+  if(!s)return'';
+  const n=parseFloat(s.replace(/[^0-9.\-]/g,''));
+  return isNaN(n)?s:usd(n);
 };
 const today=()=>new Date().toISOString().split('T')[0];
 const fmtDate=s=>{
@@ -324,6 +336,15 @@ function newRisk(overrides={}){
       changeLog:'',notes:'',lastReviewed:'',
     },
     decision:{},
+    internalPricing:{
+      enabled:false,
+      purpose:'',pricingBasis:'',allocationTarget:'',allocationLogic:'',
+      currentRiskCost:'',residualRiskCost:'',
+      allocatedAmount:'',allocationCycle:'annual',allocatedTo:'',
+      includedInBudget:'',accountingNote:'',
+      insuranceAllocationRatio:'',postInsuranceNetRiskCost:'',insuranceTradeoffNote:'',
+      expectedExposureReduction:'',roiNote:'',managementInterpretation:'',
+    },
     ...overrides
   };
 }
@@ -331,7 +352,8 @@ function newRisk(overrides={}){
 /* ═══════════════════════════════════════════════════
    LOCAL STORAGE
 ═══════════════════════════════════════════════════ */
-const LS_KEY='fair_register_v3';
+const LS_KEY='fair_register_v4';
+const OPTS_KEY='fair_opts_v1';
 function loadRisks(){
   try{
     const d=localStorage.getItem(LS_KEY);
@@ -341,6 +363,16 @@ function loadRisks(){
 }
 function saveRisks(risks){
   try{localStorage.setItem(LS_KEY,JSON.stringify(risks));}catch{}
+}
+function loadOpts(){
+  try{
+    const d=localStorage.getItem(OPTS_KEY);
+    if(!d||d==='undefined'||d==='null')return null;
+    return JSON.parse(d);
+  }catch{return null;}
+}
+function saveOpts(opts){
+  try{localStorage.setItem(OPTS_KEY,JSON.stringify(opts));}catch{}
 }
 
 /* ═══════════════════════════════════════════════════
@@ -1028,6 +1060,202 @@ function FairDiagram({nodes,setNodes}){
    NEW RISK PANEL (slide-in)
 ═══════════════════════════════════════════════════ */
 /* ScenarioField: dropdown + custom text input combo */
+/* ═══════════════════════════════════════════════════
+   OPTS MANAGER PANEL
+═══════════════════════════════════════════════════ */
+const OPTS_LABELS={
+  assets:'受影響資產',
+  actors:'威脅來源',
+  events:'威脅行為',
+  losses:'損失事件',
+};
+
+function OptsManagerPanel({opts,onUpdate,onClose}){
+  const[activeKey,setActiveKey]=useState('assets');
+  const[editIdx,setEditIdx]=useState(null);
+  const[editVal,setEditVal]=useState('');
+  const[newVal,setNewVal]=useState('');
+  const list=opts[activeKey]||[];
+
+  const startEdit=(i)=>{setEditIdx(i);setEditVal(list[i]);};
+  const saveEdit=()=>{
+    if(!editVal.trim())return;
+    const next=[...list];
+    next[editIdx]=editVal.trim();
+    onUpdate({[activeKey]:next});
+    setEditIdx(null);setEditVal('');
+  };
+  const deleteItem=(i)=>{
+    const next=list.filter((_,j)=>j!==i);
+    onUpdate({[activeKey]:next});
+  };
+  const addItem=()=>{
+    if(!newVal.trim())return;
+    onUpdate({[activeKey]:[...list,newVal.trim()]});
+    setNewVal('');
+  };
+  const moveItem=(i,dir)=>{
+    const next=[...list];
+    const j=i+dir;
+    if(j<0||j>=next.length)return;
+    [next[i],next[j]]=[next[j],next[i]];
+    onUpdate({[activeKey]:next});
+  };
+  const resetKey=()=>{
+    onUpdate({[activeKey]:undefined});
+  };
+
+  return(
+    <div style={{position:'fixed',inset:0,zIndex:300,display:'flex',
+      alignItems:'flex-start',justifyContent:'center',
+      background:'rgba(0,0,0,0.45)',paddingTop:48}}>
+      <div className="fade" style={{
+        width:640,maxHeight:'80vh',background:'white',borderRadius:8,
+        boxShadow:'0 16px 48px rgba(0,0,0,0.18)',
+        display:'flex',flexDirection:'column',overflow:'hidden'}}>
+
+        {/* Header */}
+        <div style={{padding:'18px 22px 14px',borderBottom:`1px solid ${C.bdr}`,
+          display:'flex',justifyContent:'space-between',alignItems:'center',flexShrink:0}}>
+          <div>
+            <div className="serif" style={{fontSize:18,fontWeight:700,color:C.txt}}>
+              管理選項清單
+            </div>
+            <div style={{fontSize:11.5,color:C.sub,marginTop:3,fontFamily:'Inter,sans-serif'}}>
+              可新增、修改、刪除下拉選單中的預設項目
+            </div>
+          </div>
+          <button onClick={onClose} style={{background:'none',border:'none',
+            cursor:'pointer',fontSize:22,color:C.fnt,lineHeight:1}}>×</button>
+        </div>
+
+        {/* Category tabs */}
+        <div style={{display:'flex',borderBottom:`1px solid ${C.bdr}`,flexShrink:0}}>
+          {Object.entries(OPTS_LABELS).map(([k,l])=>(
+            <button key={k} onClick={()=>{setActiveKey(k);setEditIdx(null);setNewVal('');}}
+              style={{flex:1,padding:'10px 8px',fontSize:12.5,fontWeight:activeKey===k?700:400,
+                fontFamily:'Inter,sans-serif',cursor:'pointer',border:'none',
+                borderBottom:activeKey===k?`2px solid ${C.txt}`:'2px solid transparent',
+                background:'transparent',
+                color:activeKey===k?C.txt:C.sub,transition:'color .12s'}}>
+              {l}
+              <span style={{fontSize:10,color:C.fnt,marginLeft:5}}>
+                ({(opts[k]||[]).length})
+              </span>
+            </button>
+          ))}
+        </div>
+
+        {/* List */}
+        <div style={{flex:1,overflowY:'auto',padding:'14px 18px'}}>
+          {list.map((item,i)=>(
+            <div key={i} style={{display:'flex',alignItems:'center',gap:8,
+              padding:'8px 10px',marginBottom:6,
+              background:editIdx===i?C.grnL:'#F8F7F4',
+              border:`1px solid ${editIdx===i?C.grn:C.bdr}`,
+              borderRadius:4}}>
+              {editIdx===i?(
+                <>
+                  <input autoFocus value={editVal}
+                    onChange={e=>setEditVal(e.target.value)}
+                    onKeyDown={e=>e.key==='Enter'&&saveEdit()}
+                    style={{flex:1,padding:'5px 9px',border:`1.5px solid ${C.grn}`,
+                      borderRadius:3,fontSize:13,fontFamily:'Inter,sans-serif',
+                      color:C.txt,background:'white'}}/>
+                  <button onClick={saveEdit} style={{
+                    padding:'5px 14px',background:C.txt,color:'white',
+                    border:'none',borderRadius:3,cursor:'pointer',
+                    fontSize:12,fontFamily:'Inter,sans-serif',fontWeight:600}}>
+                    確認
+                  </button>
+                  <button onClick={()=>{setEditIdx(null);setEditVal('');}} style={{
+                    padding:'5px 10px',background:'transparent',color:C.sub,
+                    border:`1px solid ${C.bdr}`,borderRadius:3,cursor:'pointer',
+                    fontSize:12,fontFamily:'Inter,sans-serif'}}>
+                    取消
+                  </button>
+                </>
+              ):(
+                <>
+                  <span style={{fontSize:10,color:C.fnt,minWidth:22,
+                    fontFamily:'Inter,sans-serif',flexShrink:0}}>{i+1}.</span>
+                  <span style={{flex:1,fontSize:13,color:C.txt,
+                    fontFamily:'Inter,sans-serif'}}>{item}</span>
+                  <button onClick={()=>moveItem(i,-1)} disabled={i===0}
+                    style={{background:'none',border:'none',cursor:i===0?'default':'pointer',
+                      fontSize:14,color:i===0?C.bdr:C.sub,padding:'0 2px',lineHeight:1}}>
+                    ↑
+                  </button>
+                  <button onClick={()=>moveItem(i,1)} disabled={i===list.length-1}
+                    style={{background:'none',border:'none',
+                      cursor:i===list.length-1?'default':'pointer',
+                      fontSize:14,color:i===list.length-1?C.bdr:C.sub,
+                      padding:'0 2px',lineHeight:1}}>
+                    ↓
+                  </button>
+                  <button onClick={()=>startEdit(i)} style={{
+                    padding:'3px 10px',background:'transparent',color:C.sub,
+                    border:`1px solid ${C.bdr}`,borderRadius:3,cursor:'pointer',
+                    fontSize:11.5,fontFamily:'Inter,sans-serif'}}>
+                    修改
+                  </button>
+                  <button onClick={()=>deleteItem(i)} style={{
+                    padding:'3px 10px',background:C.redL,color:C.red,
+                    border:`1px solid ${C.red}30`,borderRadius:3,cursor:'pointer',
+                    fontSize:11.5,fontFamily:'Inter,sans-serif'}}>
+                    刪除
+                  </button>
+                </>
+              )}
+            </div>
+          ))}
+          {list.length===0&&(
+            <div style={{textAlign:'center',padding:'24px 0',color:C.fnt,
+              fontFamily:'Inter,sans-serif',fontSize:12.5}}>
+              此清單目前沒有任何選項，請在下方新增。
+            </div>
+          )}
+        </div>
+
+        {/* Add new + footer */}
+        <div style={{borderTop:`1px solid ${C.bdr}`,padding:'14px 18px',
+          background:'#FAFAF8',flexShrink:0}}>
+          <div style={{display:'flex',gap:8,marginBottom:10}}>
+            <input value={newVal}
+              onChange={e=>setNewVal(e.target.value)}
+              onKeyDown={e=>e.key==='Enter'&&addItem()}
+              placeholder={`新增${OPTS_LABELS[activeKey]}選項…`}
+              style={{flex:1,padding:'8px 11px',border:`1.5px solid ${C.bdr}`,
+                borderRadius:3,fontSize:13,fontFamily:'Inter,sans-serif',
+                color:C.txt,background:'white'}}/>
+            <button onClick={addItem} disabled={!newVal.trim()}
+              style={{padding:'8px 20px',background:C.txt,color:'white',
+                border:'none',borderRadius:3,cursor:newVal.trim()?'pointer':'not-allowed',
+                fontSize:13,fontFamily:'Inter,sans-serif',fontWeight:600,
+                opacity:newVal.trim()?1:0.4}}>
+              + 新增
+            </button>
+          </div>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+            <button onClick={resetKey} style={{
+              fontSize:11.5,color:C.sub,background:'none',border:'none',
+              cursor:'pointer',fontFamily:'Inter,sans-serif',
+              textDecoration:'underline'}}>
+              還原此類別至預設選項
+            </button>
+            <button onClick={onClose} style={{
+              padding:'7px 20px',background:'transparent',color:C.txt,
+              border:`1.5px solid ${C.txt}`,borderRadius:3,cursor:'pointer',
+              fontSize:13,fontFamily:'Inter,sans-serif',fontWeight:600}}>
+              完成
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ScenarioField({label,fieldKey,value,opts,onChange}){
   const isCustom=value!==''&&!opts.includes(value);
   const[showCustom,setShowCustom]=useState(isCustom);
@@ -1043,7 +1271,7 @@ function ScenarioField({label,fieldKey,value,opts,onChange}){
   const selectVal=showCustom?'__custom__':value;
   return(
     <div>
-      <div style={{fontSize:11,color:C.sub,marginBottom:5,fontFamily:'Inter,sans-serif'}}>{label}</div>
+      <div style={{fontSize:11,color:C.txt,fontWeight:600,marginBottom:5,fontFamily:'Inter,sans-serif'}}>{label}</div>
       <select value={selectVal} onChange={handleSelect} style={{
         width:'100%',padding:'8px 10px',border:`1px solid ${C.bdr}`,
         borderRadius:3,fontSize:13,fontFamily:'Inter,sans-serif',
@@ -1078,7 +1306,8 @@ function ScenarioField({label,fieldKey,value,opts,onChange}){
   );
 }
 
-function NewRiskPanel({onSave,onClose}){
+function NewRiskPanel({onSave,onClose,opts:optsIn}){
+  const opts=optsIn||OPTS;
   const[form,setForm]=useState({name:'',asset:'',actor:'',event:'',loss:'',owner:'',priority:''});
   const upd=(k,v)=>setForm(f=>({...f,[k]:v}));
   const ok=form.asset&&form.asset.trim()&&
@@ -1094,10 +1323,10 @@ function NewRiskPanel({onSave,onClose}){
     });
   };
   const scFields=[
-    {k:'asset',label:'受影響資產 *',opts:OPTS.assets},
-    {k:'actor',label:'威脅來源 *',  opts:OPTS.actors},
-    {k:'event',label:'威脅行為 *',  opts:OPTS.events},
-    {k:'loss', label:'損失事件 *',  opts:OPTS.losses},
+    {k:'asset',label:'受影響資產 *',opts:opts.assets},
+    {k:'actor',label:'威脅來源 *',  opts:opts.actors},
+    {k:'event',label:'威脅行為 *',  opts:opts.events},
+    {k:'loss', label:'損失事件 *',  opts:opts.losses},
   ];
   return(
     <div style={{position:'fixed',inset:0,zIndex:200,display:'flex'}}>
@@ -1120,7 +1349,7 @@ function NewRiskPanel({onSave,onClose}){
 
         {/* Risk name */}
         <div>
-          <div style={{fontSize:11,color:C.sub,marginBottom:5,fontFamily:'Inter,sans-serif'}}>
+          <div style={{fontSize:11,color:C.txt,fontWeight:600,marginBottom:5,fontFamily:'Inter,sans-serif'}}>
             風險名稱 <span style={{color:C.fnt}}>(選填，留空會自動產生)</span>
           </div>
           <TInput value={form.name} onChange={e=>upd('name',e.target.value)}
@@ -1139,11 +1368,11 @@ function NewRiskPanel({onSave,onClose}){
         {/* Owner + Priority */}
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
           <div>
-            <div style={{fontSize:11,color:C.sub,marginBottom:5,fontFamily:'Inter,sans-serif'}}>負責人 *</div>
+            <div style={{fontSize:11,color:C.txt,fontWeight:600,marginBottom:5,fontFamily:'Inter,sans-serif'}}>負責人 *</div>
             <TInput value={form.owner} onChange={e=>upd('owner',e.target.value)} placeholder="例：CISO、IT 主管"/>
           </div>
           <div>
-            <div style={{fontSize:11,color:C.sub,marginBottom:5,fontFamily:'Inter,sans-serif'}}>初始優先等級</div>
+            <div style={{fontSize:11,color:C.txt,fontWeight:600,marginBottom:5,fontFamily:'Inter,sans-serif'}}>初始優先等級</div>
             <TSelect value={form.priority} onChange={e=>upd('priority',e.target.value)}
               options={Object.entries(PRI_CFG).map(([v,p])=>({v,l:p.label}))}
               placeholder="— 選擇 —"/>
@@ -1346,7 +1575,8 @@ function RiskRegister({risks,onOpen,onAdd}){
 ═══════════════════════════════════════════════════ */
 
 /* Tab: 總覽 */
-function TabOverview({risk,onUpdate}){
+function TabOverview({risk,onUpdate,opts:optsIn}){
+  const opts=optsIn||OPTS;
   const init={
     name:risk.name,owner:risk.owner,priority:risk.priority,
     asset:risk.scenario.asset,actor:risk.scenario.actor,
@@ -1384,16 +1614,16 @@ function TabOverview({risk,onUpdate}){
         <SectionLabel>基本資訊</SectionLabel>
         <div style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr',gap:12}}>
           <div>
-            <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>風險名稱</div>
+            <div style={{fontSize:11,color:C.txt,fontWeight:600,marginBottom:4,fontFamily:'Inter,sans-serif'}}>風險名稱</div>
             <TInput value={ed.name} onChange={e=>updField({name:e.target.value})}
               placeholder="例：電商平台客戶資料外洩風險"/>
           </div>
           <div>
-            <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>負責人</div>
+            <div style={{fontSize:11,color:C.txt,fontWeight:600,marginBottom:4,fontFamily:'Inter,sans-serif'}}>負責人</div>
             <TInput value={ed.owner} onChange={e=>updField({owner:e.target.value})} placeholder="例：CISO"/>
           </div>
           <div>
-            <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>優先等級</div>
+            <div style={{fontSize:11,color:C.txt,fontWeight:600,marginBottom:4,fontFamily:'Inter,sans-serif'}}>優先等級</div>
             <TSelect value={ed.priority} onChange={e=>updField({priority:e.target.value})}
               options={Object.entries(PRI_CFG).map(([v,p])=>({v,l:p.label}))}
               placeholder="— 選擇 —"/>
@@ -1404,22 +1634,22 @@ function TabOverview({risk,onUpdate}){
         <SectionLabel>場景定義</SectionLabel>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
           {[
-            {k:'asset',label:'受影響資產',opts:OPTS.assets},
-            {k:'actor',label:'威脅來源',  opts:OPTS.actors},
-            {k:'event',label:'威脅行為',  opts:OPTS.events},
-            {k:'loss', label:'損失事件',  opts:OPTS.losses},
-          ].map(({k,label,opts})=>(
+            {k:'asset',label:'受影響資產',opts:opts.assets},
+            {k:'actor',label:'威脅來源',  opts:opts.actors},
+            {k:'event',label:'威脅行為',  opts:opts.events},
+            {k:'loss', label:'損失事件',  opts:opts.losses},
+          ].map(({k,label,opts:optList})=>(
             <ScenarioField key={k} label={label} fieldKey={k}
-              value={ed[k]} opts={opts}
+              value={ed[k]} opts={optList}
               onChange={v=>updField({[k]:v})}/>
           ))}
           <div>
-            <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>業務衝擊關切</div>
+            <div style={{fontSize:11,color:C.txt,fontWeight:600,marginBottom:4,fontFamily:'Inter,sans-serif'}}>業務衝擊關切</div>
             <TInput value={ed.concern} onChange={e=>updField({concern:e.target.value})} rows={2}
               placeholder="預期可能造成的業務影響…"/>
           </div>
           <div>
-            <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>分析假設條件</div>
+            <div style={{fontSize:11,color:C.txt,fontWeight:600,marginBottom:4,fontFamily:'Inter,sans-serif'}}>分析假設條件</div>
             <TInput value={ed.assumptions} onChange={e=>updField({assumptions:e.target.value})} rows={2}
               placeholder="分析前提與假設說明…"/>
           </div>
@@ -1442,7 +1672,7 @@ function TabOverview({risk,onUpdate}){
           ch={saved&&!isDirty?'儲存完成 ✓':'儲存變更'}
           onClick={isDirty?save:undefined}
           disabled={!isDirty}
-          v={saved&&!isDirty?'ghost':'grn'}
+          v={saved&&!isDirty?'ghost':'primary'}
           style={saved&&!isDirty?{color:C.grn,borderColor:C.grn,background:'transparent',opacity:0.8}:{}}
         />
       </div>
@@ -1818,27 +2048,27 @@ function TabEvaluation({risk,onUpdate}){
         borderRadius:4,padding:'14px 16px',marginBottom:16}}>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:12,marginBottom:12}}>
           <div>
-            <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>
+            <div style={{fontSize:11,color:C.txt,fontWeight:600,marginBottom:4,fontFamily:'Inter,sans-serif'}}>
               適用風險胃納門檻（EAL）
             </div>
             <TInput value={ed.appetiteThreshold} onChange={e=>upd('appetiteThreshold',e.target.value)}
-              placeholder="例：300000" type="number"/>
+              placeholder="例：300,000" type="number"/>
             <div style={{fontSize:10,color:C.fnt,marginTop:3,fontFamily:'Inter,sans-serif'}}>
               風險胃納（Risk Appetite）上限，以 USD 輸入
             </div>
           </div>
           <div>
-            <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>
+            <div style={{fontSize:11,color:C.txt,fontWeight:600,marginBottom:4,fontFamily:'Inter,sans-serif'}}>
               適用風險容忍度門檻（P90）
             </div>
             <TInput value={ed.toleranceThreshold} onChange={e=>upd('toleranceThreshold',e.target.value)}
-              placeholder="例：1000000" type="number"/>
+              placeholder="例：1,000,000" type="number"/>
             <div style={{fontSize:10,color:C.fnt,marginTop:3,fontFamily:'Inter,sans-serif'}}>
               風險容忍度（Risk Tolerance）上限，以 USD 輸入
             </div>
           </div>
           <div>
-            <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>
+            <div style={{fontSize:11,color:C.txt,fontWeight:600,marginBottom:4,fontFamily:'Inter,sans-serif'}}>
               門檻來源
             </div>
             <TSelect value={ed.thresholdSource} onChange={e=>upd('thresholdSource',e.target.value)}
@@ -1943,36 +2173,36 @@ function TabEvaluation({risk,onUpdate}){
       <SectionLabel>評估記錄 · Evaluation Record</SectionLabel>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:14}}>
         <div>
-          <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>評估者</div>
+          <div style={{fontSize:11,color:C.txt,fontWeight:600,marginBottom:4,fontFamily:'Inter,sans-serif'}}>評估者</div>
           <TInput value={ed.evaluator} onChange={e=>upd('evaluator',e.target.value)} placeholder="例：風險長（CRO）"/>
         </div>
         <div>
-          <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>評估日期</div>
+          <div style={{fontSize:11,color:C.txt,fontWeight:600,marginBottom:4,fontFamily:'Inter,sans-serif'}}>評估日期</div>
           <TInput type="date" value={ed.evaluationDate} onChange={e=>upd('evaluationDate',e.target.value)}/>
         </div>
         <div style={{gridColumn:'span 2'}}>
-          <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>
+          <div style={{fontSize:11,color:C.txt,fontWeight:600,marginBottom:4,fontFamily:'Inter,sans-serif'}}>
             評估依據（Basis of Evaluation）
           </div>
           <TInput value={ed.basis} onChange={e=>upd('basis',e.target.value)} rows={2}
-            placeholder="例：依據公司資訊安全風險政策 v2.1，本情境 P90 超出部門容忍度上限 $800K"/>
+            placeholder="例：依據公司資訊安全風險政策 v2.1，本情境 P90 超出部門容忍度上限 NT$800 萬"/>
         </div>
         <div style={{gridColumn:'span 2'}}>
-          <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>
+          <div style={{fontSize:11,color:C.txt,fontWeight:600,marginBottom:4,fontFamily:'Inter,sans-serif'}}>
             決策理由（Decision Rationale）
           </div>
           <TInput value={ed.rationale} onChange={e=>upd('rationale',e.target.value)} rows={3}
-            placeholder="例：鑑於 EAL 達 $557K 且 P90 達 $1.56M，超出部門風險胃納 $300K，決定採取降低策略，優先強化存取控制與資料加密"/>
+            placeholder="例：鑑於 EAL 達 NT$557 萬且 P90 達 NT$1,560 萬，超出部門風險胃納 NT$300 萬，決定採取降低策略，優先強化存取控制與資料加密"/>
         </div>
         <div>
-          <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>
+          <div style={{fontSize:11,color:C.txt,fontWeight:600,marginBottom:4,fontFamily:'Inter,sans-serif'}}>
             是否需升級審批
           </div>
           <TSelect value={ed.escalation} onChange={e=>upd('escalation',e.target.value)}
             options={escalations} placeholder="— 選擇 —"/>
         </div>
         <div>
-          <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>
+          <div style={{fontSize:11,color:C.txt,fontWeight:600,marginBottom:4,fontFamily:'Inter,sans-serif'}}>
             審批層級（如需要）
           </div>
           <TInput value={ed.approvalLevel} onChange={e=>upd('approvalLevel',e.target.value)}
@@ -1992,7 +2222,7 @@ function TabEvaluation({risk,onUpdate}){
         )}
         <Btn ch={saved&&!isDirty?'儲存完成 ✓':'儲存變更'}
           onClick={isDirty?save:undefined} disabled={!isDirty||!ed.decision}
-          v={saved&&!isDirty?'ghost':'grn'}
+          v={saved&&!isDirty?'ghost':'primary'}
           style={saved&&!isDirty?{color:C.grn,borderColor:C.grn,background:'transparent',opacity:0.8}:{}}/>
       </div>
     </div>
@@ -2076,35 +2306,35 @@ function TabTreatment({risk,onUpdate}){
       <SectionLabel>應對計畫 · Treatment Plan</SectionLabel>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:14}}>
         <div style={{gridColumn:'span 2'}}>
-          <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>
+          <div style={{fontSize:11,color:C.txt,fontWeight:600,marginBottom:4,fontFamily:'Inter,sans-serif'}}>
             控制措施描述（Treatment Description）
           </div>
           <TInput value={ed.description} onChange={e=>upd('description',e.target.value)} rows={2}
             placeholder="例：強化特權存取管理（PAM）、部署端點偵測回應（EDR）、實施資料分類與 DLP 策略"/>
         </div>
         <div style={{gridColumn:'span 2'}}>
-          <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>
+          <div style={{fontSize:11,color:C.txt,fontWeight:600,marginBottom:4,fontFamily:'Inter,sans-serif'}}>
             具體控制項目（Specific Control Actions）
           </div>
           <TInput value={ed.controls} onChange={e=>upd('controls',e.target.value)} rows={2}
             placeholder="例：① 全面部署 MFA ② 網路分段 ③ 加密靜態資料 ④ 季度安全意識培訓"/>
         </div>
         <div>
-          <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>應對負責人</div>
+          <div style={{fontSize:11,color:C.txt,fontWeight:600,marginBottom:4,fontFamily:'Inter,sans-serif'}}>應對負責人</div>
           <TInput value={ed.owner} onChange={e=>upd('owner',e.target.value)} placeholder="例：資訊安全主管"/>
         </div>
         <div>
-          <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>
+          <div style={{fontSize:11,color:C.txt,fontWeight:600,marginBottom:4,fontFamily:'Inter,sans-serif'}}>
             目標完成日 {overdue&&<span style={{color:C.red,fontSize:10}}>（已逾期）</span>}
           </div>
           <TInput type="date" value={ed.dueDate} onChange={e=>upd('dueDate',e.target.value)}/>
         </div>
         <div>
-          <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>預估總預算</div>
-          <TInput value={ed.budget} onChange={e=>upd('budget',e.target.value)} placeholder="例：$150,000"/>
+          <div style={{fontSize:11,color:C.txt,fontWeight:600,marginBottom:4,fontFamily:'Inter,sans-serif'}}>預估總預算</div>
+          <TInput value={ed.budget} onChange={e=>upd('budget',e.target.value)} placeholder="例：NT$150,000"/>
         </div>
         <div>
-          <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>預算類型</div>
+          <div style={{fontSize:11,color:C.txt,fontWeight:600,marginBottom:4,fontFamily:'Inter,sans-serif'}}>預算類型</div>
           <TSelect value={ed.budgetType} onChange={e=>upd('budgetType',e.target.value)}
             options={budgetTypes} placeholder="— 選擇預算類型 —"/>
         </div>
@@ -2159,8 +2389,8 @@ function TabTreatment({risk,onUpdate}){
             預期殘餘風險 · Expected Residual
           </div>
           {[
-            ['預期殘餘 EAL',  'residualEAL',  '例：$220,000'],
-            ['預期殘餘 P90',  'residualP90',  '例：$780,000'],
+            ['預期殘餘 EAL',  'residualEAL',  '例：NT$220,000'],
+            ['預期殘餘 P90',  'residualP90',  '例：NT$780,000'],
             ['預期殘餘 P95',  'residualP95',  '例：$1,100,000'],
             ['預期非零損失率','residualPLoss', '例：35%'],
           ].map(([lbl,key,ph])=>(
@@ -2171,7 +2401,7 @@ function TabTreatment({risk,onUpdate}){
           ))}
         </div>
         <div>
-          <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>
+          <div style={{fontSize:11,color:C.txt,fontWeight:600,marginBottom:4,fontFamily:'Inter,sans-serif'}}>
             殘餘風險估算依據
           </div>
           <TSelect value={ed.residualBasis} onChange={e=>upd('residualBasis',e.target.value)}
@@ -2179,11 +2409,11 @@ function TabTreatment({risk,onUpdate}){
         </div>
         <div style={{gridColumn:'span 1'}}/>
         <div style={{gridColumn:'span 2'}}>
-          <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>
+          <div style={{fontSize:11,color:C.txt,fontWeight:600,marginBottom:4,fontFamily:'Inter,sans-serif'}}>
             預期殘餘風險說明（Residual Risk Narrative）
           </div>
           <TInput value={ed.residualNarrative} onChange={e=>upd('residualNarrative',e.target.value)} rows={2}
-            placeholder="例：完成 MFA、PAM 與郵件 DLP 後，預估 EAL 可由 $557.6K 降至 $220K，P90 由 $1.56M 降至 $780K，預期回到可接受範圍"/>
+            placeholder="例：完成 MFA、PAM 與郵件 DLP 後，預估 EAL 可由 NT$557 萬降至 NT$220 萬，P90 由 NT$1,560 萬降至 NT$780 萬，預期回到可接受範圍"/>
         </div>
       </div>
 
@@ -2191,39 +2421,39 @@ function TabTreatment({risk,onUpdate}){
       <SectionLabel>財務審查與協作 · Finance Review</SectionLabel>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:14}}>
         <div>
-          <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>財務審查人</div>
+          <div style={{fontSize:11,color:C.txt,fontWeight:600,marginBottom:4,fontFamily:'Inter,sans-serif'}}>財務審查人</div>
           <TInput value={ed.financeReviewer} onChange={e=>upd('financeReviewer',e.target.value)}
             placeholder="例：財務長、財務副總"/>
         </div>
         <div>
-          <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>財務審查狀態</div>
+          <div style={{fontSize:11,color:C.txt,fontWeight:600,marginBottom:4,fontFamily:'Inter,sans-serif'}}>財務審查狀態</div>
           <TSelect value={ed.financeStatus} onChange={e=>upd('financeStatus',e.target.value)}
             options={financeStatuses} placeholder="— 選擇狀態 —"/>
         </div>
         <div>
-          <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>核准金額</div>
+          <div style={{fontSize:11,color:C.txt,fontWeight:600,marginBottom:4,fontFamily:'Inter,sans-serif'}}>核准金額</div>
           <TInput value={ed.approvedAmount} onChange={e=>upd('approvedAmount',e.target.value)}
-            placeholder="例：$120,000"/>
+            placeholder="例：NT$120,000"/>
         </div>
         <div>
-          <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>預估年度成本</div>
+          <div style={{fontSize:11,color:C.txt,fontWeight:600,marginBottom:4,fontFamily:'Inter,sans-serif'}}>預估年度成本</div>
           <TInput value={ed.annualizedCost} onChange={e=>upd('annualizedCost',e.target.value)}
-            placeholder="例：$40,000/年（含維護）"/>
+            placeholder="例：NT$40,000/年（含維護）"/>
         </div>
         <div>
-          <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>是否需保險評估</div>
+          <div style={{fontSize:11,color:C.txt,fontWeight:600,marginBottom:4,fontFamily:'Inter,sans-serif'}}>是否需保險評估</div>
           <TSelect value={ed.insuranceNeeded} onChange={e=>upd('insuranceNeeded',e.target.value)}
             options={[{v:'no',l:'不需要'},{v:'yes',l:'需要評估'}]} placeholder="— 選擇 —"/>
         </div>
         {ed.insuranceNeeded==='yes'&&(
           <div>
-            <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>保險方案說明</div>
+            <div style={{fontSize:11,color:C.txt,fontWeight:600,marginBottom:4,fontFamily:'Inter,sans-serif'}}>保險方案說明</div>
             <TInput value={ed.insuranceNotes} onChange={e=>upd('insuranceNotes',e.target.value)}
-              placeholder="例：評估網路責任險，保額 $5M，年費約 $25K"/>
+              placeholder="例：評估網路責任險，保額 NT$500 萬，年費約 NT$75,000"/>
           </div>
         )}
         <div style={{gridColumn:'span 2'}}>
-          <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>財務備註</div>
+          <div style={{fontSize:11,color:C.txt,fontWeight:600,marginBottom:4,fontFamily:'Inter,sans-serif'}}>財務備註</div>
           <TInput value={ed.financeNotes} onChange={e=>upd('financeNotes',e.target.value)} rows={2}
             placeholder="例：本次預算已列入 Q3 資安強化專案，需財務長簽核後始可動支"/>
         </div>
@@ -2241,7 +2471,7 @@ function TabTreatment({risk,onUpdate}){
         )}
         <Btn ch={saved&&!isDirty?'儲存完成 ✓':'儲存變更'}
           onClick={isDirty?save:undefined} disabled={!isDirty}
-          v={saved&&!isDirty?'ghost':'grn'}
+          v={saved&&!isDirty?'ghost':'primary'}
           style={saved&&!isDirty?{color:C.grn,borderColor:C.grn,background:'transparent',opacity:0.8}:{}}/>
       </div>
     </div>
@@ -2312,7 +2542,7 @@ function TabMonitoring({risk,onUpdate}){
       <SectionLabel>監控設定 · Monitoring Configuration</SectionLabel>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:14}}>
         <div>
-          <div style={{fontSize:11,color:C.sub,marginBottom:6,fontFamily:'Inter,sans-serif'}}>複查週期</div>
+          <div style={{fontSize:11,color:C.txt,fontWeight:600,marginBottom:6,fontFamily:'Inter,sans-serif'}}>複查週期</div>
           <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:6}}>
             {cycles.map(c=>(
               <div key={c.v} onClick={()=>upd('reviewCycle',c.v)}
@@ -2327,23 +2557,23 @@ function TabMonitoring({risk,onUpdate}){
           </div>
         </div>
         <div>
-          <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>下次複查日</div>
+          <div style={{fontSize:11,color:C.txt,fontWeight:600,marginBottom:4,fontFamily:'Inter,sans-serif'}}>下次複查日</div>
           <TInput type="date" value={ed.nextReview} onChange={e=>upd('nextReview',e.target.value)}/>
         </div>
         <div>
-          <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>監控負責人</div>
+          <div style={{fontSize:11,color:C.txt,fontWeight:600,marginBottom:4,fontFamily:'Inter,sans-serif'}}>監控負責人</div>
           <TInput value={ed.monitoringOwner} onChange={e=>upd('monitoringOwner',e.target.value)}
             placeholder="例：風險管理部門主管"/>
         </div>
         <div>
-          <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>
+          <div style={{fontSize:11,color:C.txt,fontWeight:600,marginBottom:4,fontFamily:'Inter,sans-serif'}}>
             應對措施進度（%）
           </div>
           <TInput value={ed.treatmentProgress} onChange={e=>upd('treatmentProgress',e.target.value)}
             placeholder="例：65（表示 65% 完成）" type="number"/>
         </div>
         <div>
-          <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>
+          <div style={{fontSize:11,color:C.txt,fontWeight:600,marginBottom:4,fontFamily:'Inter,sans-serif'}}>
             殘餘風險是否在門檻內
           </div>
           <TSelect value={ed.residualWithinThreshold}
@@ -2352,7 +2582,7 @@ function TabMonitoring({risk,onUpdate}){
             placeholder="— 選擇 —"/>
         </div>
         <div>
-          <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>
+          <div style={{fontSize:11,color:C.txt,fontWeight:600,marginBottom:4,fontFamily:'Inter,sans-serif'}}>
             是否需重新執行 FAIR 分析
           </div>
           <TSelect value={ed.refreshNeeded} onChange={e=>upd('refreshNeeded',e.target.value)}
@@ -2360,7 +2590,7 @@ function TabMonitoring({risk,onUpdate}){
             placeholder="— 選擇 —"/>
         </div>
         <div>
-          <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>
+          <div style={{fontSize:11,color:C.txt,fontWeight:600,marginBottom:4,fontFamily:'Inter,sans-serif'}}>
             假設條件是否有重大變更
           </div>
           <TSelect value={ed.assumptionChanged} onChange={e=>upd('assumptionChanged',e.target.value)}
@@ -2369,7 +2599,7 @@ function TabMonitoring({risk,onUpdate}){
         </div>
         {ed.assumptionChanged==='yes'&&(
           <div>
-            <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>
+            <div style={{fontSize:11,color:C.txt,fontWeight:600,marginBottom:4,fontFamily:'Inter,sans-serif'}}>
               變更說明
             </div>
             <TInput value={ed.assumptionNotes} onChange={e=>upd('assumptionNotes',e.target.value)} rows={2}
@@ -2377,14 +2607,14 @@ function TabMonitoring({risk,onUpdate}){
           </div>
         )}
         <div style={{gridColumn:'span 2'}}>
-          <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>
+          <div style={{fontSize:11,color:C.txt,fontWeight:600,marginBottom:4,fontFamily:'Inter,sans-serif'}}>
             重要事項與變更記錄（Change Log）
           </div>
           <TInput value={ed.changeLog} onChange={e=>upd('changeLog',e.target.value)} rows={3}
             placeholder={`例：\n2026-03 MFA 部署完成，覆蓋率達 95%\n2026-04 網路分段實施，待滲透測試驗證\n2026-05 次季度複查預定 2026-07-15`}/>
         </div>
         <div style={{gridColumn:'span 2'}}>
-          <div style={{fontSize:11,color:C.sub,marginBottom:4,fontFamily:'Inter,sans-serif'}}>監控備註</div>
+          <div style={{fontSize:11,color:C.txt,fontWeight:600,marginBottom:4,fontFamily:'Inter,sans-serif'}}>監控備註</div>
           <TInput value={ed.notes} onChange={e=>upd('notes',e.target.value)} rows={2}
             placeholder="例：每月由安全團隊提交 KRI 報告；控制效能複查列入季度稽核"/>
         </div>
@@ -2434,7 +2664,7 @@ function TabMonitoring({risk,onUpdate}){
           )}
           <Btn ch={saved&&!isDirty?'儲存完成 ✓':'儲存變更'}
             onClick={isDirty?save:undefined} disabled={!isDirty}
-            v={saved&&!isDirty?'ghost':'grn'}
+            v={saved&&!isDirty?'ghost':'primary'}
             style={saved&&!isDirty?{color:C.grn,borderColor:C.grn,background:'transparent',opacity:0.8}:{}}/>
         </div>
       </div>
@@ -2443,12 +2673,447 @@ function TabMonitoring({risk,onUpdate}){
 }
 
 /* Tab: 決策摘要 */
+/* Tab: 風險計價 */
+function TabPricing({risk,onUpdate}){
+  const r=risk.fairResult;
+  const ip0=risk.internalPricing||{};
+  const tr=risk.treatment;
+  const mkId=()=>Math.random().toString(36).slice(2,8);
+  const[ip,setIp]=useState(()=>({
+    enabled:false,purpose:'',pricingBasis:'',
+    currentRiskCost:'',residualRiskCost:'',allocatedAmount:'',
+    allocationCycle:'annual',includedInBudget:'',accountingNote:'',
+    insuranceAllocationRatio:'',postInsuranceNetRiskCost:'',insuranceTradeoffNote:'',
+    expectedExposureReduction:'',roiNote:'',managementInterpretation:'',
+    allocationDetails:[],
+    ...ip0,
+    allocationDetails:Array.isArray(ip0.allocationDetails)?ip0.allocationDetails:[],
+  }));
+  const[saved,setSaved]=useState(false);
+  const upd=(k,v)=>{setIp(p=>({...p,[k]:v}));setSaved(false);};
+  const save=()=>{
+    onUpdate({...risk,internalPricing:{...ip,lastUpdated:today()},updatedAt:today()});
+    setSaved(true);
+  };
+  const parseTWD=s=>Math.round(parseFloat((s||'').replace(/[^0-9.\-]/g,''))||0);
+  const indicativeCost=useMemo(()=>{
+    if(!r)return 0;
+    if(ip.pricingBasis==='eal')return r.mean;
+    if(ip.pricingBasis==='p90')return r.p90;
+    if(ip.pricingBasis==='hybrid')return(r.mean+r.p90)/2;
+    if(ip.pricingBasis==='base_adj')return r.mean*1.15;
+    return r.mean;
+  },[ip.pricingBasis,r]);
+  const treatBudget=parseTWD(tr.approvedAmount||tr.budget);
+  const curCost=parseTWD(ip.currentRiskCost)||Math.round(indicativeCost);
+  const resCost=parseTWD(ip.residualRiskCost);
+  const insRatio=(parseFloat(ip.insuranceAllocationRatio)||0)/100;
+  const reduction=curCost-resCost;
+  const roi=treatBudget>0&&reduction>0?(reduction/treatBudget*100).toFixed(0):null;
+  const totalPool=parseTWD(ip.allocatedAmount)||curCost;
+  const details=ip.allocationDetails||[];
+  const totalPct=details.reduce((s,d)=>s+(parseFloat(d.weightPercent)||0),0);
+  const pctOk=Math.abs(totalPct-100)<0.01;
+  const calcRow=(d)=>{
+    const pct=(parseFloat(d.weightPercent)||0)/100;
+    const curAlloc=Math.round(curCost*pct);
+    const resAlloc=Math.round(resCost*pct);
+    const insAlloc=Math.round(curCost*insRatio*pct);
+    const ctrlAlloc=Math.round(treatBudget*pct);
+    const net=resAlloc+ctrlAlloc+insAlloc;
+    return{curAlloc,resAlloc,insAlloc,ctrlAlloc,net};
+  };
+  const addUnit=()=>{
+    const newRow={id:mkId(),unitName:'',allocationBasis:'equal',weightPercent:'',notes:''};
+    upd('allocationDetails',[...details,newRow]);
+  };
+  const removeUnit=(id)=>upd('allocationDetails',details.filter(d=>d.id!==id));
+  const updUnit=(id,k,v)=>upd('allocationDetails',details.map(d=>d.id===id?{...d,[k]:v}:d));
+  const autoEqual=()=>{
+    if(!details.length)return;
+    const pct=+(100/details.length).toFixed(1);
+    upd('allocationDetails',details.map(d=>({...d,weightPercent:String(pct)})));
+  };
+  const purposes=[
+    {v:'cost_alloc',     l:'成本分攤',     en:'Cost Allocation'},
+    {v:'invest_dec',     l:'投資決策支援', en:'Investment Decision'},
+    {v:'insurance_alloc',l:'保險分攤',     en:'Insurance Allocation'},
+    {v:'retained',       l:'風險保留成本', en:'Retained Risk Cost'},
+  ];
+  const bases=[
+    {v:'eal',      l:'EAL',         en:'預期年度損失'},
+    {v:'p90',      l:'P90',         en:'高分位損失'},
+    {v:'hybrid',   l:'Hybrid',      en:'EAL+P90 混合'},
+    {v:'base_adj', l:'Base+Adj',    en:'固定費率調整'},
+  ];
+  const cycles=[{v:'monthly',l:'月度'},{v:'quarterly',l:'季度'},{v:'annual',l:'年度'},{v:'one_time',l:'一次性'}];
+  const allocBases=[
+    {v:'equal',   l:'平均分攤'},
+    {v:'revenue', l:'依營收占比'},
+    {v:'asset',   l:'依資產價值'},
+    {v:'usage',   l:'依使用量'},
+    {v:'eal',     l:'依 EAL 占比'},
+    {v:'custom',  l:'自訂'},
+  ];
+  if(!r){
+    return(
+      <div style={{textAlign:'center',padding:'48px 20px',color:C.fnt,fontFamily:'Inter,sans-serif'}}>
+        請先在「FAIR 分析」標籤執行蒙地卡羅模擬，才能使用內部風險計價功能。
+      </div>
+    );
+  }
+  return(
+    <div>
+      {/* Enable toggle */}
+      <div onClick={()=>upd('enabled',!ip.enabled)}
+        style={{display:'flex',alignItems:'center',gap:12,padding:'14px 16px',
+          background:ip.enabled?C.txt:'#F6F4EF',borderRadius:4,marginBottom:16,
+          border:`1px solid ${ip.enabled?C.txt:C.bdr}`,cursor:'pointer',transition:'all .15s'}}>
+        <div style={{width:20,height:20,borderRadius:4,flexShrink:0,
+          border:`2px solid ${ip.enabled?'white':C.bdr}`,
+          background:ip.enabled?'rgba(255,255,255,0.25)':'transparent',
+          display:'flex',alignItems:'center',justifyContent:'center'}}>
+          {ip.enabled&&<span style={{color:'white',fontSize:11,fontWeight:700}}>✓</span>}
+        </div>
+        <div>
+          <div style={{fontSize:13.5,fontWeight:700,fontFamily:'Inter,sans-serif',
+            color:ip.enabled?'white':C.txt}}>
+            啟用內部風險計價（Internal Risk Pricing）
+          </div>
+          <div style={{fontSize:11,color:ip.enabled?'rgba(255,255,255,.7)':C.sub,
+            fontFamily:'Inter,sans-serif',marginTop:2}}>
+            將 FAIR 量化結果轉化為內部管理成本訊號，支援多單位成本分攤與投資決策
+          </div>
+        </div>
+      </div>
+      {ip.enabled&&(
+        <div className="fade">
+          {/* PART 1: 整體計價設定 */}
+          <div style={{background:'#F6F4EF',border:`1px solid ${C.bdr}`,
+            borderRadius:6,padding:'16px 18px',marginBottom:16}}>
+            <div style={{fontSize:10.5,fontWeight:700,color:C.txt,letterSpacing:'0.1em',
+              textTransform:'uppercase',marginBottom:12,fontFamily:'Inter,sans-serif',
+              display:'flex',alignItems:'center',gap:8}}>
+              <span style={{width:3,height:14,background:C.txt,borderRadius:2,display:'inline-block'}}/>
+              整體計價設定 · Overall Pricing Setup
+            </div>
+            {/* FAIR refs */}
+            <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8,marginBottom:12}}>
+              {[
+                {k:'EAL',       v:usd(r.mean),          note:'預期年度損失'},
+                {k:'P90',       v:usd(r.p90),            note:'90% 情境門檻'},
+                {k:'Hybrid',    v:usd((r.mean+r.p90)/2), note:'EAL+P90 均值'},
+                {k:'計價指示值', v:usd(indicativeCost),   note:'依所選方法'},
+              ].map(({k,v,note})=>(
+                <div key={k} style={{padding:'8px 10px',background:'white',
+                  border:`1px solid ${C.bdr}`,borderRadius:4}}>
+                  <div style={{fontSize:9,color:C.fnt,marginBottom:1,fontFamily:'Inter,sans-serif',
+                    textTransform:'uppercase',letterSpacing:'0.06em'}}>{k}</div>
+                  <div style={{fontSize:15,fontWeight:700,color:C.txt,fontFamily:'Inter,sans-serif'}}>{v}</div>
+                  <div style={{fontSize:9,color:C.fnt,fontFamily:'Inter,sans-serif'}}>{note}</div>
+                </div>
+              ))}
+            </div>
+            {/* Purpose + Method */}
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:12}}>
+              <div>
+                <div style={{fontSize:11,color:C.txt,fontWeight:700,marginBottom:5,fontFamily:'Inter,sans-serif'}}>計價目的</div>
+                <div style={{display:'flex',flexWrap:'wrap',gap:5}}>
+                  {purposes.map(p=>(
+                    <div key={p.v} onClick={()=>upd('purpose',p.v)}
+                      style={{padding:'5px 11px',borderRadius:3,cursor:'pointer',fontSize:12,
+                        fontFamily:'Inter,sans-serif',fontWeight:ip.purpose===p.v?700:400,
+                        border:`1.5px solid ${ip.purpose===p.v?C.blu:C.bdr}`,
+                        background:ip.purpose===p.v?C.bluL:'white',
+                        color:ip.purpose===p.v?C.blu:C.sub,transition:'all .12s'}}>
+                      {p.l}
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <div style={{fontSize:11,color:C.txt,fontWeight:700,marginBottom:5,fontFamily:'Inter,sans-serif'}}>計價方法</div>
+                <div style={{display:'flex',flexWrap:'wrap',gap:5}}>
+                  {bases.map(b=>(
+                    <div key={b.v} onClick={()=>upd('pricingBasis',b.v)}
+                      style={{padding:'5px 11px',borderRadius:3,cursor:'pointer',fontSize:12,
+                        fontFamily:'Inter,sans-serif',fontWeight:ip.pricingBasis===b.v?700:400,
+                        border:`1.5px solid ${ip.pricingBasis===b.v?C.grn:C.bdr}`,
+                        background:ip.pricingBasis===b.v?C.grnL:'white',
+                        color:ip.pricingBasis===b.v?C.grn:C.sub,transition:'all .12s'}}>
+                      {b.l}
+                      {ip.pricingBasis===b.v&&(
+                        <span style={{fontSize:9,color:C.grnM,marginLeft:3}}>({b.en})</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+            {/* Cost fields */}
+            <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:10,marginBottom:10}}>
+              {[
+                {k:'currentRiskCost',          l:'目前內部風險成本',    ph:`建議：${usd(Math.round(indicativeCost))}`},
+                {k:'residualRiskCost',          l:'預期殘餘風險成本',    ph:'例：NT$220,000'},
+                {k:'allocatedAmount',           l:'建議總分攤池',        ph:'例：NT$500,000'},
+                {k:'insuranceAllocationRatio',  l:'保險分攤比例（%）',   ph:'例：60'},
+                {k:'postInsuranceNetRiskCost',  l:'保險後淨風險成本',    ph:'例：NT$223,000'},
+                {k:'expectedExposureReduction', l:'預期節省暴露',        ph:'例：NT$337,000'},
+              ].map(({k,l,ph})=>(
+                <div key={k}>
+                  <div style={{fontSize:11,color:C.txt,fontWeight:700,marginBottom:3,fontFamily:'Inter,sans-serif'}}>{l}</div>
+                  <TInput value={ip[k]} onChange={e=>upd(k,e.target.value)} placeholder={ph} sm/>
+                  {ip[k]&&k!=='insuranceAllocationRatio'&&(
+                    <div style={{fontSize:9.5,color:C.grn,marginTop:2,fontFamily:'Inter,sans-serif'}}>
+                      {fmtTWD(ip[k])}
+                    </div>
+                  )}
+                </div>
+              ))}
+              <div>
+                <div style={{fontSize:11,color:C.txt,fontWeight:700,marginBottom:3,fontFamily:'Inter,sans-serif'}}>分攤週期</div>
+                <TSelect value={ip.allocationCycle} onChange={e=>upd('allocationCycle',e.target.value)}
+                  options={cycles} placeholder="— 選擇 —" sm/>
+              </div>
+              <div>
+                <div style={{fontSize:11,color:C.txt,fontWeight:700,marginBottom:3,fontFamily:'Inter,sans-serif'}}>是否納入部門預算</div>
+                <TSelect value={ip.includedInBudget} onChange={e=>upd('includedInBudget',e.target.value)}
+                  options={[{v:'yes',l:'是，已納入'},{v:'no',l:'否'},{v:'pending',l:'待確認'}]}
+                  placeholder="— 選擇 —" sm/>
+              </div>
+            </div>
+            {/* ROI + interpretation */}
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+              <div>
+                <div style={{fontSize:11,color:C.txt,fontWeight:700,marginBottom:3,fontFamily:'Inter,sans-serif'}}>ROI / 成本效益說明</div>
+                <TInput value={ip.roiNote} onChange={e=>upd('roiNote',e.target.value)} rows={2} sm
+                  placeholder={roi?`投入 ${usd(treatBudget)}，節省 ${usd(reduction)}，ROI≈${roi}%`:'例：投資 NT$360 萬，預期節省 NT$1,011 萬，ROI 約 2.8 倍'}/>
+              </div>
+              <div>
+                <div style={{fontSize:11,color:C.txt,fontWeight:700,marginBottom:3,fontFamily:'Inter,sans-serif'}}>管理意涵</div>
+                <TInput value={ip.managementInterpretation} onChange={e=>upd('managementInterpretation',e.target.value)} rows={2} sm
+                  placeholder="例：目前年度風險成本超出可接受水準，完成控制措施後預期降至合理範圍"/>
+              </div>
+              <div style={{gridColumn:'span 2'}}>
+                <div style={{fontSize:11,color:C.txt,fontWeight:700,marginBottom:3,fontFamily:'Inter,sans-serif'}}>財務入帳與分攤邏輯</div>
+                <TInput value={ip.accountingNote} onChange={e=>upd('accountingNote',e.target.value)} rows={2} sm
+                  placeholder="例：以 OPEX 項目入帳，按季結算至各業務單位成本中心"/>
+              </div>
+            </div>
+          </div>
+
+          {/* PART 2: 分攤明細 */}
+          <div style={{background:C.surf,border:`1px solid ${C.bdr}`,
+            borderRadius:6,padding:'16px 18px',marginBottom:16}}>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}}>
+              <div style={{fontSize:10.5,fontWeight:700,color:C.txt,letterSpacing:'0.1em',
+                textTransform:'uppercase',fontFamily:'Inter,sans-serif',
+                display:'flex',alignItems:'center',gap:8}}>
+                <span style={{width:3,height:14,background:C.grn,borderRadius:2,display:'inline-block'}}/>
+                分攤明細 · Allocation Detail
+              </div>
+              <div style={{display:'flex',gap:8}}>
+                {details.length>0&&(
+                  <button onClick={autoEqual} style={{padding:'5px 12px',background:'transparent',
+                    color:C.sub,border:`1px solid ${C.bdr}`,borderRadius:3,cursor:'pointer',
+                    fontSize:11.5,fontFamily:'Inter,sans-serif'}}>⚖ 平均分配</button>
+                )}
+                <button onClick={addUnit} style={{padding:'6px 16px',background:C.txt,
+                  color:'white',border:'none',borderRadius:3,cursor:'pointer',
+                  fontSize:12.5,fontFamily:'Inter,sans-serif',fontWeight:700}}>+ 新增單位</button>
+              </div>
+            </div>
+            {details.length===0?(
+              <div style={{textAlign:'center',padding:'32px 20px',
+                border:`2px dashed ${C.bdr}`,borderRadius:6,
+                color:C.fnt,fontFamily:'Inter,sans-serif',fontSize:13}}>
+                尚未新增分攤單位。點擊「+ 新增單位」開始設定。
+              </div>
+            ):(
+              <>
+                {/* Header */}
+                <div style={{display:'grid',
+                  gridTemplateColumns:'1.8fr 1.2fr 0.7fr 1.1fr 1.1fr 1.1fr 0.5fr',
+                  gap:6,padding:'6px 8px',background:'#F0EDE8',borderRadius:4,marginBottom:6,
+                  fontSize:9.5,fontWeight:700,color:C.fnt,letterSpacing:'0.06em',
+                  textTransform:'uppercase',fontFamily:'Inter,sans-serif'}}>
+                  {['單位名稱','分攤依據','%','目前成本','殘餘成本','淨分攤成本',''].map(h=>(
+                    <div key={h}>{h}</div>
+                  ))}
+                </div>
+                {/* Rows */}
+                {details.map((d,i)=>{
+                  const{curAlloc,resAlloc,ctrlAlloc,insAlloc,net}=calcRow(d);
+                  return(
+                    <div key={d.id} style={{display:'grid',
+                      gridTemplateColumns:'1.8fr 1.2fr 0.7fr 1.1fr 1.1fr 1.1fr 0.5fr',
+                      gap:6,padding:'7px 8px',marginBottom:5,
+                      background:i%2===0?'#FAFAF8':'white',
+                      border:`1px solid ${C.bdr}`,borderRadius:4,alignItems:'center'}}>
+                      <input value={d.unitName}
+                        onChange={e=>updUnit(d.id,'unitName',e.target.value)}
+                        placeholder="例：A 工廠"
+                        style={{padding:'5px 8px',border:`1px solid ${C.bdr}`,
+                          borderRadius:3,fontSize:12.5,fontFamily:'Inter,sans-serif',
+                          color:C.txt,background:'white',width:'100%'}}/>
+                      <select value={d.allocationBasis}
+                        onChange={e=>updUnit(d.id,'allocationBasis',e.target.value)}
+                        style={{padding:'5px 4px',border:`1px solid ${C.bdr}`,
+                          borderRadius:3,fontSize:11,fontFamily:'Inter,sans-serif',
+                          color:C.txt,background:'white',width:'100%',cursor:'pointer',appearance:'auto'}}>
+                        {allocBases.map(b=>(<option key={b.v} value={b.v}>{b.l}</option>))}
+                      </select>
+                      <div style={{position:'relative'}}>
+                        <input type="number" value={d.weightPercent}
+                          onChange={e=>updUnit(d.id,'weightPercent',e.target.value)}
+                          placeholder="0"
+                          style={{padding:'5px 18px 5px 6px',border:`1px solid ${C.bdr}`,
+                            borderRadius:3,fontSize:12,fontFamily:'Inter,sans-serif',
+                            color:C.txt,background:'white',width:'100%'}}/>
+                        <span style={{position:'absolute',right:5,top:'50%',
+                          transform:'translateY(-50%)',fontSize:9.5,color:C.fnt,
+                          pointerEvents:'none'}}>%</span>
+                      </div>
+                      <div style={{fontSize:12,fontWeight:600,color:C.txt,
+                        fontFamily:'Inter,sans-serif',textAlign:'right'}}>
+                        {curAlloc>0?usd(curAlloc):'—'}
+                      </div>
+                      <div style={{fontSize:12,fontWeight:600,color:C.sub,
+                        fontFamily:'Inter,sans-serif',textAlign:'right'}}>
+                        {resAlloc>0?usd(resAlloc):'—'}
+                      </div>
+                      <div style={{fontSize:12,fontWeight:700,color:C.grn,
+                        fontFamily:'Inter,sans-serif',textAlign:'right'}}>
+                        {net>0?usd(net):'—'}
+                      </div>
+                      <button onClick={()=>removeUnit(d.id)}
+                        style={{padding:'4px 8px',background:C.redL,color:C.red,
+                          border:`1px solid ${C.red}30`,borderRadius:3,cursor:'pointer',
+                          fontSize:11,fontFamily:'Inter,sans-serif',textAlign:'center'}}>✕</button>
+                    </div>
+                  );
+                })}
+                {/* Totals */}
+                <div style={{display:'grid',
+                  gridTemplateColumns:'1.8fr 1.2fr 0.7fr 1.1fr 1.1fr 1.1fr 0.5fr',
+                  gap:6,padding:'7px 8px',
+                  background:pctOk?C.grnL:C.redL,
+                  border:`1px solid ${pctOk?C.grn+'40':C.red+'40'}`,
+                  borderRadius:4,marginTop:4,alignItems:'center'}}>
+                  <div style={{fontSize:12,fontWeight:700,color:C.txt,fontFamily:'Inter,sans-serif'}}>合計</div>
+                  <div/>
+                  <div style={{fontSize:13,fontWeight:700,color:pctOk?C.grn:C.red,
+                    fontFamily:'Inter,sans-serif',textAlign:'center'}}>
+                    {totalPct.toFixed(1)}%
+                  </div>
+                  {[
+                    details.reduce((s,d)=>s+calcRow(d).curAlloc,0),
+                    details.reduce((s,d)=>s+calcRow(d).resAlloc,0),
+                    details.reduce((s,d)=>s+calcRow(d).net,0),
+                  ].map((v,ci)=>(
+                    <div key={ci} style={{fontSize:12,fontWeight:700,
+                      color:ci===2?C.grn:C.txt,fontFamily:'Inter,sans-serif',textAlign:'right'}}>
+                      {v>0?usd(v):'—'}
+                    </div>
+                  ))}
+                  <div/>
+                </div>
+                {/* Status */}
+                <div style={{marginTop:8,padding:'8px 12px',borderRadius:4,
+                  background:pctOk?C.grnL:'#FFF8F0',
+                  border:`1px solid ${pctOk?C.grn+'30':'#D4A03040'}`,
+                  display:'flex',alignItems:'center',gap:8}}>
+                  <span style={{fontSize:13}}>{pctOk?'✓':'⚠'}</span>
+                  <span style={{fontSize:12,fontFamily:'Inter,sans-serif',
+                    color:pctOk?C.grn:C.amb}}>
+                    {pctOk
+                      ?`已分攤 ${details.length} 個單位，合計 100%，分攤設定完整`
+                      :totalPct<100
+                        ?`尚未分攤 ${(100-totalPct).toFixed(1)}%，請調整各單位比例至合計 100%`
+                        :`已超額分攤 ${(totalPct-100).toFixed(1)}%，請調整比例`}
+                  </span>
+                  {!pctOk&&totalPool>0&&(
+                    <span style={{marginLeft:'auto',fontSize:11,color:C.fnt,fontFamily:'Inter,sans-serif'}}>
+                      總分攤池 {usd(totalPool)}
+                    </span>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Auto Summary */}
+          {(curCost>0||details.length>0)&&(
+            <div style={{background:C.grnL,border:`1px solid ${C.grn}35`,
+              borderRadius:6,padding:'14px 18px',marginBottom:16}}>
+              <div style={{fontSize:10,fontWeight:700,color:C.grn,letterSpacing:'0.1em',
+                textTransform:'uppercase',marginBottom:10,fontFamily:'Inter,sans-serif'}}>
+                自動計算摘要 · Auto Summary
+              </div>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8,marginBottom:details.length>0?10:0}}>
+                {[
+                  ['目前風險成本',  usd(curCost)||'—',            '計價基礎'],
+                  ['殘餘風險成本',  resCost>0?usd(resCost):'—',   '應對後預期'],
+                  ['預期節省暴露',  reduction>0?usd(reduction):'—','風險成本降幅'],
+                  ['粗略 ROI',      roi?roi+'%':'—',               `投入 ${usd(treatBudget)}`],
+                ].map(([k,v,note])=>(
+                  <div key={k} style={{textAlign:'center',padding:'9px 8px',
+                    background:'white',borderRadius:3,border:`1px solid ${C.grn}25`}}>
+                    <div style={{fontSize:9.5,color:C.grn,marginBottom:2,fontWeight:700,
+                      fontFamily:'Inter,sans-serif'}}>{k}</div>
+                    <div style={{fontSize:16,fontWeight:700,color:C.grn,
+                      fontFamily:'Inter,sans-serif'}}>{v}</div>
+                    <div style={{fontSize:9,color:C.grnM,fontFamily:'Inter,sans-serif',marginTop:1}}>{note}</div>
+                  </div>
+                ))}
+              </div>
+              {details.length>0&&(
+                <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8}}>
+                  {[
+                    ['參與分攤單位', details.length+'個'],
+                    ['已分攤比例',   totalPct.toFixed(1)+'%'],
+                    ['最大分攤單位', (()=>{
+                      if(!details.length)return'—';
+                      const m=details.reduce((a,b)=>(parseFloat(b.weightPercent)||0)>(parseFloat(a.weightPercent)||0)?b:a,details[0]);
+                      return(m.unitName||'未命名')+' '+((parseFloat(m.weightPercent)||0).toFixed(1))+'%';
+                    })()],
+                  ].map(([k,v])=>(
+                    <div key={k} style={{padding:'8px 12px',background:'white',
+                      borderRadius:3,border:`1px solid ${C.grn}25`}}>
+                      <div style={{fontSize:9.5,color:C.grn,marginBottom:2,fontWeight:700,
+                        fontFamily:'Inter,sans-serif'}}>{k}</div>
+                      <div style={{fontSize:14,fontWeight:700,color:C.grn,
+                        fontFamily:'Inter,sans-serif'}}>{v}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Save */}
+          <div style={{display:'flex',justifyContent:'flex-end',alignItems:'center',gap:12}}>
+            {saved&&(
+              <span style={{fontSize:12,color:C.grn,fontFamily:'Inter,sans-serif',
+                display:'flex',alignItems:'center',gap:5}}>
+                <span style={{fontSize:15}}>✓</span> 計價設定已儲存
+              </span>
+            )}
+            <Btn ch="儲存計價設定" onClick={save} v="primary"/>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TabDecision({risk}){
   const r=risk.fairResult;
   const ev=risk.evaluation;
   const tr=risk.treatment;
   const mo=risk.monitoring;
   const sc=risk.scenario;
+  const ip=risk.internalPricing||{};
   const decLabel={accept:'接受 (Accept)',treat:'處理 (Treat)',
     transfer:'轉移 (Transfer)',avoid:'迴避 (Avoid)'};
   const statusSummary=()=>{
@@ -2641,8 +3306,202 @@ function TabDecision({risk}){
         </div>
       </div>
 
-      <div style={{marginTop:16,display:'flex',justifyContent:'flex-end'}}>
-        <Btn ch="🖨 匯出 PDF 報告" onClick={()=>window.print()} v="red"/>
+      {/* F. 財務與資源配置摘要 */}
+      {(ip&&ip.enabled)&&(
+        <div style={{background:C.surf,border:`1px solid ${C.bdr}`,
+          borderRadius:4,padding:'14px 16px',gridColumn:'span 2',marginTop:14}}>
+          <div style={{fontSize:10,fontWeight:700,color:C.txt,letterSpacing:'0.1em',
+            textTransform:'uppercase',marginBottom:14,fontFamily:'Inter,sans-serif'}}>
+            財務與資源配置摘要 · Financial & Funding View
+          </div>
+
+          {/* 成本比較：目前 vs 殘餘 */}
+          {(()=>{
+            const parseTWD=s=>Math.round(parseFloat((s||'').replace(/[^0-9.\-]/g,''))||0);
+            const curCost=parseTWD(ip.currentRiskCost)||Math.round(r?r.mean:0);
+            const resCost=parseTWD(ip.residualRiskCost);
+            const reduction=curCost-resCost;
+            const basisLabel={eal:'EAL 計價基礎',p90:'P90 計價基礎',
+              hybrid:'混合計價（EAL+P90）÷2',base_adj:'固定費率調整'}[ip.pricingBasis]||'FAIR 計價';
+            const details=ip.allocationDetails||[];
+            const totalPct=details.reduce((s,d)=>s+(parseFloat(d.weightPercent)||0),0);
+            const calcRow=d=>{
+              const pct=(parseFloat(d.weightPercent)||0)/100;
+              return{
+                curAlloc:Math.round(curCost*pct),
+                resAlloc:Math.round(resCost*pct),
+                net:Math.round(resCost*pct),
+              };
+            };
+            return(
+              <>
+                {/* Cost cards */}
+                <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:10,marginBottom:14}}>
+                  {[
+                    {label:'目前內部風險成本',val:curCost>0?usd(curCost):'—',
+                      note:basisLabel,bg:'#F6F4EF',vc:C.red},
+                    {label:'應對後預期風險成本',val:resCost>0?usd(resCost):'—',
+                      note:'應對措施完成後',bg:C.grnL,vc:C.grn},
+                    {label:'預期節省暴露',val:reduction>0?usd(reduction):'—',
+                      note:'風險成本降幅',bg:C.grnL,vc:C.grn},
+                    {label:'建議總分攤池',val:ip.allocatedAmount?usd(parseTWD(ip.allocatedAmount)):'—',
+                      note:{monthly:'月度',quarterly:'季度',annual:'年度',one_time:'一次性'}[ip.allocationCycle]||'年度',
+                      bg:'#F6F4EF',vc:C.txt},
+                  ].map(({label,val,note,bg,vc})=>(
+                    <div key={label} style={{background:bg,border:`1px solid ${C.bdr}`,
+                      borderRadius:4,padding:'10px 12px'}}>
+                      <div style={{fontSize:9.5,color:C.fnt,marginBottom:3,
+                        textTransform:'uppercase',letterSpacing:'0.06em',
+                        fontFamily:'Inter,sans-serif'}}>{label}</div>
+                      <div style={{fontSize:19,fontWeight:700,color:vc,
+                        fontFamily:'Inter,sans-serif',letterSpacing:'-0.01em'}}>{val}</div>
+                      <div style={{fontSize:9.5,color:C.fnt,marginTop:2,
+                        fontFamily:'Inter,sans-serif'}}>{note}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* 保險 + 其他指標 */}
+                <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8,marginBottom:14}}>
+                  {[
+                    ['保險後淨成本',  ip.postInsuranceNetRiskCost
+                      ?usd(parseTWD(ip.postInsuranceNetRiskCost)):'—'],
+                    ['是否納入預算',  {yes:'是',no:'否',pending:'待確認'}[ip.includedInBudget]||'—'],
+                    ['計價方法',      basisLabel],
+                  ].map(([k,v])=>(
+                    <div key={k} style={{padding:'8px 10px',background:'#F6F4EF',borderRadius:3}}>
+                      <div style={{fontSize:9.5,color:C.fnt,marginBottom:2,
+                        fontFamily:'Inter,sans-serif'}}>{k}</div>
+                      <div style={{fontSize:12.5,fontWeight:600,color:C.txt,
+                        fontFamily:'Inter,sans-serif'}}>{v}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* 分攤明細 */}
+                {details.length>0&&(
+                  <div style={{marginBottom:12}}>
+                    <div style={{fontSize:10,fontWeight:700,color:C.txt,
+                      letterSpacing:'0.08em',textTransform:'uppercase',
+                      marginBottom:8,fontFamily:'Inter,sans-serif'}}>
+                      分攤明細（{details.length} 個單位，已分攤 {totalPct.toFixed(1)}%）
+                    </div>
+                    {/* Header */}
+                    <div style={{display:'grid',
+                      gridTemplateColumns:'2fr 1.2fr 0.7fr 1.1fr 1.1fr 1.1fr',
+                      gap:6,padding:'5px 8px',background:'#F0EDE8',borderRadius:4,
+                      marginBottom:5,fontSize:9.5,fontWeight:700,color:C.fnt,
+                      letterSpacing:'0.06em',textTransform:'uppercase',fontFamily:'Inter,sans-serif'}}>
+                      {['單位名稱','分攤依據','%','目前分攤成本','殘餘分攤成本','淨分攤成本'].map(h=>(
+                        <div key={h}>{h}</div>
+                      ))}
+                    </div>
+                    {/* Rows */}
+                    {details.map((d,i)=>{
+                      const{curAlloc,resAlloc,net}=calcRow(d);
+                      const basisMap={equal:'平均分攤',revenue:'依營收',asset:'依資產',
+                        usage:'依使用量',eal:'依EAL',custom:'自訂'};
+                      return(
+                        <div key={d.id} style={{display:'grid',
+                          gridTemplateColumns:'2fr 1.2fr 0.7fr 1.1fr 1.1fr 1.1fr',
+                          gap:6,padding:'6px 8px',marginBottom:4,
+                          background:i%2===0?'#FAFAF8':'white',
+                          border:`1px solid ${C.bdr}`,borderRadius:3,alignItems:'center'}}>
+                          <div style={{fontSize:12.5,fontWeight:600,color:C.txt,
+                            fontFamily:'Inter,sans-serif'}}>{d.unitName||'（未命名）'}</div>
+                          <div style={{fontSize:11,color:C.sub,fontFamily:'Inter,sans-serif'}}>
+                            {basisMap[d.allocationBasis]||d.allocationBasis||'—'}
+                          </div>
+                          <div style={{fontSize:12,fontWeight:600,color:C.txt,
+                            fontFamily:'Inter,sans-serif',textAlign:'center'}}>
+                            {d.weightPercent?d.weightPercent+'%':'—'}
+                          </div>
+                          <div style={{fontSize:12,color:C.txt,fontFamily:'Inter,sans-serif',
+                            textAlign:'right'}}>{curAlloc>0?usd(curAlloc):'—'}</div>
+                          <div style={{fontSize:12,color:C.sub,fontFamily:'Inter,sans-serif',
+                            textAlign:'right'}}>{resAlloc>0?usd(resAlloc):'—'}</div>
+                          <div style={{fontSize:12,fontWeight:700,color:C.grn,
+                            fontFamily:'Inter,sans-serif',textAlign:'right'}}>{net>0?usd(net):'—'}</div>
+                        </div>
+                      );
+                    })}
+                    {/* Totals */}
+                    <div style={{display:'grid',
+                      gridTemplateColumns:'2fr 1.2fr 0.7fr 1.1fr 1.1fr 1.1fr',
+                      gap:6,padding:'6px 8px',
+                      background:Math.abs(totalPct-100)<0.01?C.grnL:C.redL,
+                      border:`1px solid ${Math.abs(totalPct-100)<0.01?C.grn+'40':C.red+'40'}`,
+                      borderRadius:3,marginTop:2,alignItems:'center'}}>
+                      <div style={{fontSize:11.5,fontWeight:700,color:C.txt,
+                        fontFamily:'Inter,sans-serif'}}>合計</div>
+                      <div/>
+                      <div style={{fontSize:12,fontWeight:700,
+                        color:Math.abs(totalPct-100)<0.01?C.grn:C.red,
+                        fontFamily:'Inter,sans-serif',textAlign:'center'}}>
+                        {totalPct.toFixed(1)}%
+                      </div>
+                      {[
+                        details.reduce((s,d)=>s+calcRow(d).curAlloc,0),
+                        details.reduce((s,d)=>s+calcRow(d).resAlloc,0),
+                        details.reduce((s,d)=>s+calcRow(d).net,0),
+                      ].map((v,ci)=>(
+                        <div key={ci} style={{fontSize:12,fontWeight:700,
+                          color:ci===2?C.grn:C.txt,fontFamily:'Inter,sans-serif',textAlign:'right'}}>
+                          {v>0?usd(v):'—'}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* 管理結論 */}
+                {(ip.managementInterpretation||ip.roiNote)&&(
+                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+                    {ip.roiNote&&(
+                      <div style={{padding:'10px 12px',background:'#EBF0FF',
+                        borderRadius:3,border:`1px solid ${C.blu}30`}}>
+                        <div style={{fontSize:10,fontWeight:600,color:C.blu,marginBottom:4,
+                          fontFamily:'Inter,sans-serif'}}>ROI / 成本效益說明</div>
+                        <p style={{fontSize:12,color:C.txt,lineHeight:1.7,
+                          fontFamily:'Inter,sans-serif'}}>{ip.roiNote}</p>
+                      </div>
+                    )}
+                    {ip.managementInterpretation&&(
+                      <div style={{padding:'10px 12px',background:C.grnL,
+                        borderRadius:3,border:`1px solid ${C.grn}30`}}>
+                        <div style={{fontSize:10,fontWeight:600,color:C.grn,marginBottom:4,
+                          fontFamily:'Inter,sans-serif'}}>管理意涵 · Management Interpretation</div>
+                        <p style={{fontSize:12,color:C.txt,lineHeight:1.7,
+                          fontFamily:'Inter,sans-serif'}}>{ip.managementInterpretation}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </>
+            );
+          })()}
+        </div>
+      )}
+
+      <div style={{marginTop:16,display:'flex',justifyContent:'flex-end',gap:10,alignItems:'center'}}>
+        <span style={{fontSize:11,color:C.fnt,fontFamily:'Inter,sans-serif'}}>
+          匯出此風險的完整資料（JSON）
+        </span>
+        <Btn ch="↑ 匯出此風險" onClick={()=>{
+          const payload={
+            exportedAt:new Date().toISOString(),
+            version:'fair_register_v4',
+            count:1,
+            risks:[risk],
+          };
+          const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});
+          const url=URL.createObjectURL(blob);
+          const a=document.createElement('a');
+          a.href=url;
+          a.download=`${risk.name||'風險'}_${new Date().toISOString().slice(0,10)}.json`;
+          a.click();
+          URL.revokeObjectURL(url);
+        }} v="primary"/>
       </div>
     </div>
   );
@@ -2652,7 +3511,8 @@ function TabDecision({risk}){
 /* ═══════════════════════════════════════════════════
    RISK DETAIL VIEW
 ═══════════════════════════════════════════════════ */
-function RiskDetail({risk,onUpdate,onBack}){
+function RiskDetail({risk,onUpdate,onBack,opts:optsIn}){
+  const opts=optsIn||OPTS;
   const[tab,setTab]=useState('overview');
   const TABS=[
     {id:'overview',   label:'總覽'},
@@ -2660,6 +3520,7 @@ function RiskDetail({risk,onUpdate,onBack}){
     {id:'evaluation', label:'評估',       badge:risk.evaluation.decision?risk.evaluation.decision:null},
     {id:'treatment',  label:'應對',       badge:risk.treatment.treatStatus?TREAT_STATUS[risk.treatment.treatStatus]?.label:null},
     {id:'monitoring', label:'監控'},
+    {id:'pricing',    label:'風險計價',   badge:risk.internalPricing?.enabled?'啟用':null},
     {id:'decision',   label:'決策摘要',   badge:risk.evaluation.decision?'完成':null},
   ];
   const decMap={accept:'接受',treat:'處理',transfer:'轉移',avoid:'迴避'};
@@ -2703,22 +3564,26 @@ function RiskDetail({risk,onUpdate,onBack}){
       </div>
 
       {/* Tabs */}
-      <div style={{display:'flex',gap:0,marginBottom:16,
-        borderBottom:`2px solid ${C.bdr}`,background:C.surf,borderRadius:'4px 4px 0 0',
-        border:`1px solid ${C.bdr}`,overflow:'hidden'}}>
+      <div style={{display:'flex',gap:0,marginBottom:0,
+        background:C.txt,borderRadius:'4px 4px 0 0',
+        border:`1px solid ${C.txt}`,overflow:'hidden'}}>
         {TABS.map(t=>{
           const act=tab===t.id;
           return(
             <button key={t.id} onClick={()=>setTab(t.id)} style={{
-              padding:'11px 18px',fontSize:12.5,fontWeight:act?600:400,
+              padding:'11px 20px',fontSize:12.5,fontWeight:act?700:400,
               fontFamily:'Inter,sans-serif',cursor:'pointer',
-              border:'none',borderBottom:act?`2px solid ${C.txt}`:'2px solid transparent',
-              background:act?'white':'transparent',color:act?C.txt:C.sub,
-              marginBottom:act?'-1px':'0',transition:'color .12s',
+              border:'none',
+              borderBottom:act?'3px solid white':'3px solid transparent',
+              background:act?'rgba(255,255,255,0.14)':'transparent',
+              color:act?'white':'rgba(255,255,255,0.58)',
+              transition:'all .15s',
               display:'flex',alignItems:'center',gap:6}}>
               {t.label}
               {t.badge&&(
-                <span style={{fontSize:10,background:C.bg,color:C.sub,
+                <span style={{fontSize:10,
+                  background:'rgba(255,255,255,0.18)',
+                  color:'rgba(255,255,255,0.88)',
                   padding:'1px 6px',borderRadius:2,fontFamily:'Inter,sans-serif',
                   fontWeight:500}}>{decMap[t.badge]||t.badge}</span>
               )}
@@ -2731,11 +3596,12 @@ function RiskDetail({risk,onUpdate,onBack}){
       <div className="fade" key={tab}
         style={{background:C.surf,border:`1px solid ${C.bdr}`,
           borderRadius:4,padding:'20px 20px 24px'}}>
-        {tab==='overview'  &&<TabOverview    risk={risk} onUpdate={onUpdate}/>}
+        {tab==='overview'  &&<TabOverview    risk={risk} onUpdate={onUpdate} opts={opts}/>}
         {tab==='fair'      &&<TabFair        risk={risk} onUpdate={onUpdate}/>}
         {tab==='evaluation'&&<TabEvaluation  risk={risk} onUpdate={onUpdate}/>}
         {tab==='treatment' &&<TabTreatment   risk={risk} onUpdate={onUpdate}/>}
         {tab==='monitoring'&&<TabMonitoring  risk={risk} onUpdate={onUpdate}/>}
+        {tab==='pricing'   &&<TabPricing     risk={risk} onUpdate={onUpdate}/>}
         {tab==='decision'  &&<TabDecision    risk={risk}/>}
       </div>
     </div>
@@ -2745,13 +3611,101 @@ function RiskDetail({risk,onUpdate,onBack}){
 /* ═══════════════════════════════════════════════════
    APP
 ═══════════════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════
+   IMPORT TOAST
+═══════════════════════════════════════════════════ */
+function ImportToast({msg,onClose}){
+  useEffect(()=>{
+    const t=setTimeout(onClose,4000);
+    return()=>clearTimeout(t);
+  },[onClose]);
+  const ok=msg.type==='ok';
+  return(
+    <div className="fade" style={{
+      position:'fixed',bottom:28,left:'50%',transform:'translateX(-50%)',
+      zIndex:400,padding:'12px 20px',borderRadius:6,
+      background:ok?C.grn:C.red,color:'white',
+      boxShadow:'0 6px 24px rgba(0,0,0,0.2)',
+      display:'flex',alignItems:'center',gap:12,
+      fontFamily:'Inter,sans-serif',fontSize:13,fontWeight:500,
+      minWidth:260,maxWidth:480}}>
+      <span style={{fontSize:16}}>{ok?'✓':'✕'}</span>
+      <span style={{flex:1}}>{msg.text}</span>
+      <button onClick={onClose} style={{
+        background:'none',border:'none',cursor:'pointer',
+        color:'rgba(255,255,255,0.75)',fontSize:16,lineHeight:1,padding:0}}>×</button>
+    </div>
+  );
+}
+
 function App(){
   const[risks,setRisks]=useState(()=>loadRisks());
+  const[customOpts,setCustomOpts]=useState(()=>{
+    const saved=loadOpts();
+    return saved||{};
+  });
   const[view,setView]=useState('register');
   const[selectedId,setSelectedId]=useState(null);
   const[showNew,setShowNew]=useState(false);
+  const[showOpts,setShowOpts]=useState(false);
+  const[importMsg,setImportMsg]=useState(null);
+
+  /* ── Export all risks as JSON ── */
+  const exportRisks=()=>{
+    const payload={
+      exportedAt:new Date().toISOString(),
+      version:'fair_register_v4',
+      count:risks.length,
+      risks,
+    };
+    const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url;
+    a.download=`企業風險量化平台_${new Date().toISOString().slice(0,10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  /* ── Import risks from JSON ── */
+  const importRisks=(e)=>{
+    const file=e.target.files[0];
+    if(!file)return;
+    const reader=new FileReader();
+    reader.onload=ev=>{
+      try{
+        const data=JSON.parse(ev.target.result);
+        /* Accept either a direct array or our wrapped payload format */
+        const incoming=Array.isArray(data)?data:(data.risks||[]);
+        if(!incoming.length)throw new Error('未找到任何風險資料');
+        /* Merge: keep existing risks, append new ones that don't share the same id */
+        const existingIds=new Set(risks.map(r=>r.id));
+        const newItems=incoming.filter(r=>r.id&&!existingIds.has(r.id));
+        const dupes=incoming.length-newItems.length;
+        setRisks(rs=>[...rs,...newItems]);
+        setImportMsg({
+          type:'ok',
+          text:`成功匯入 ${newItems.length} 筆風險${dupes>0?`（已略過 ${dupes} 筆重複項目）`:''}`,
+        });
+      }catch(err){
+        setImportMsg({type:'err',text:`匯入失敗：${err.message}`});
+      }
+      /* reset file input so same file can be re-selected */
+      e.target.value='';
+    };
+    reader.readAsText(file);
+  };
 
   useEffect(()=>{saveRisks(risks);},[risks]);
+  useEffect(()=>{saveOpts(customOpts);},[customOpts]);
+
+  /* Merge defaults with custom overrides */
+  const activeOpts=useMemo(()=>({
+    assets:customOpts.assets||OPTS.assets,
+    actors:customOpts.actors||OPTS.actors,
+    events:customOpts.events||OPTS.events,
+    losses:customOpts.losses||OPTS.losses,
+  }),[customOpts]);
 
   const selectedRisk=risks.find(r=>r.id===selectedId);
 
@@ -2821,6 +3775,42 @@ function App(){
             <span style={{color:C.red,fontWeight:600}}>{critCount} 個緊急</span>
           )}
         </div>
+
+        {/* Export button */}
+        <button onClick={exportRisks} disabled={risks.length===0}
+          style={{
+            padding:'6px 14px',background:'transparent',
+            border:`1px solid ${C.bdr}`,borderRadius:3,cursor:risks.length===0?'not-allowed':'pointer',
+            fontSize:12,color:risks.length===0?C.fnt:C.sub,fontFamily:'Inter,sans-serif',
+            display:'flex',alignItems:'center',gap:5,transition:'all .12s',
+            marginLeft:6,opacity:risks.length===0?0.45:1}}
+          title="匯出所有風險資料為 JSON 檔案">
+          ↑ 匯出
+        </button>
+
+        {/* Import button (wraps hidden file input) */}
+        <label style={{
+          padding:'6px 14px',background:'transparent',
+          border:`1px solid ${C.bdr}`,borderRadius:3,cursor:'pointer',
+          fontSize:12,color:C.sub,fontFamily:'Inter,sans-serif',
+          display:'flex',alignItems:'center',gap:5,
+          transition:'all .12s',marginLeft:0}}
+          title="從 JSON 檔案匯入風險資料">
+          ↓ 匯入
+          <input type="file" accept=".json,application/json"
+            onChange={importRisks}
+            style={{display:'none'}}/>
+        </label>
+
+        <button onClick={()=>setShowOpts(true)} style={{
+          padding:'6px 14px',background:'transparent',
+          border:`1px solid ${C.bdr}`,borderRadius:3,cursor:'pointer',
+          fontSize:12,color:C.sub,fontFamily:'Inter,sans-serif',
+          display:'flex',alignItems:'center',gap:6,transition:'all .12s',
+          marginLeft:0}}
+          title="管理選項清單">
+          ⚙ 選項管理
+        </button>
       </header>
 
       {/* Page content */}
@@ -2845,13 +3835,35 @@ function App(){
         {view==='detail'&&selectedRisk&&(
           <div className="fade">
             <RiskDetail risk={selectedRisk} onUpdate={updateRisk}
-              onBack={()=>setView('register')}/>
+              onBack={()=>setView('register')} opts={activeOpts}/>
           </div>
         )}
       </div>
 
       {/* New risk side panel */}
-      {showNew&&<NewRiskPanel onSave={addRisk} onClose={()=>setShowNew(false)}/>}
+      {showNew&&<NewRiskPanel onSave={addRisk} onClose={()=>setShowNew(false)} opts={activeOpts}/>}
+
+      {/* Import result toast */}
+      {importMsg&&(
+        <ImportToast msg={importMsg} onClose={()=>setImportMsg(null)}/>
+      )}}
+      {showOpts&&<OptsManagerPanel
+        opts={activeOpts}
+        onUpdate={o=>{
+          /* o is the full merged list for one key; save entire updated category */
+          setCustomOpts(prev=>{
+            const next={...prev};
+            Object.keys(o).forEach(k=>{
+              if(o[k]===undefined){
+                delete next[k]; /* undefined = reset to default */
+              } else {
+                next[k]=o[k];
+              }
+            });
+            return next;
+          });
+        }}
+        onClose={()=>setShowOpts(false)}/>}
 
       {/* Copyright footer */}
       <footer className="no-print" style={{
