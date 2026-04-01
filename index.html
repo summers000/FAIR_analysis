@@ -11,7 +11,7 @@
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 html{font-size:15px;-webkit-font-smoothing:antialiased}
-body{background:#EEEBE4;color:#111110;font-family:'Inter','Noto Serif TC',sans-serif;min-height:100vh}
+body{background:#EEEBE4;color:#111110;font-family:'Inter','Noto Serif TC',sans-serif;min-height:100vh;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
 input[type=number]{-moz-appearance:textfield;appearance:textfield}
 input[type=number]::-webkit-inner-spin-button,
 input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none}
@@ -470,12 +470,39 @@ function StatusBadge({status,small}){
   );
 }
 
-function SectionLabel({children}){
+function SectionLabel({children,accent}){
+  const ac=accent||C.txt;
   return(
-    <div style={{fontSize:10,fontWeight:600,letterSpacing:'0.14em',
-      textTransform:'uppercase',color:C.fnt,fontFamily:'Inter,sans-serif',
-      marginBottom:10,paddingBottom:6,borderBottom:`1px solid ${C.bdr}`}}>
-      {children}
+    <div style={{display:'flex',alignItems:'center',gap:8,
+      marginBottom:12,paddingBottom:8,borderBottom:`1px solid ${C.bdr}`}}>
+      <span style={{width:3,height:14,background:ac,borderRadius:2,flexShrink:0}}/>
+      <span style={{fontSize:10,fontWeight:600,letterSpacing:'0.12em',
+        textTransform:'uppercase',color:C.sub,fontFamily:'Inter,sans-serif'}}>
+        {children}
+      </span>
+    </div>
+  );
+}
+
+/* Section card wrapper for visual separation */
+function SCard({children,accent,title,style={}}){
+  return(
+    <div style={{background:C.surf,border:`1px solid ${C.bdr}`,
+      borderRadius:6,overflow:'hidden',marginBottom:20,...style}}>
+      {title&&(
+        <div style={{padding:'10px 18px',background:'#F6F4EF',
+          borderBottom:`1px solid ${C.bdr}`,
+          display:'flex',alignItems:'center',gap:8}}>
+          <span style={{width:3,height:13,background:accent||C.txt,
+            borderRadius:2,display:'inline-block'}}/>
+          <span style={{fontSize:10.5,fontWeight:600,color:C.txt,
+            letterSpacing:'0.1em',textTransform:'uppercase',
+            fontFamily:'Inter,sans-serif'}}>{title}</span>
+        </div>
+      )}
+      <div style={{padding:'18px 20px'}}>
+        {children}
+      </div>
     </div>
   );
 }
@@ -1247,7 +1274,7 @@ function OptsManagerPanel({opts,onUpdate,onClose}){
 
         {/* Add new + footer */}
         <div style={{borderTop:`1px solid ${C.bdr}`,padding:'14px 18px',
-          background:'#FAFAF8',flexShrink:0}}>
+          background:'#F8F7F4',flexShrink:0}}>
           <div style={{display:'flex',gap:8,marginBottom:10}}>
             <input value={newVal}
               onChange={e=>setNewVal(e.target.value)}
@@ -1623,6 +1650,31 @@ function RiskRegister({risks,onOpen,onAdd}){
    RISK DETAIL — TABS
 ═══════════════════════════════════════════════════ */
 
+
+/* SecBlock: full-width section with own background */
+function SecBlock({children,bg,dark,accent,label,noBorder,style={}}){
+  const bg2=dark?C.txt:bg||C.surf;
+  const labelColor=dark?'rgba(255,255,255,0.4)':C.fnt;
+  const acLine=accent||(dark?'rgba(255,255,255,0.5)':C.txt);
+  return(
+    <div style={{background:bg2,padding:'26px 32px 30px',
+      borderBottom:noBorder?'none':`1px solid ${dark?'rgba(255,255,255,0.08)':C.bdr}`,
+      ...style}}>
+      {label&&(
+        <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:16,
+          paddingBottom:10,borderBottom:`1px solid ${dark?'rgba(255,255,255,0.12)':C.bdr}`}}>
+          <span style={{width:3,height:14,background:acLine,borderRadius:2,flexShrink:0}}/>
+          <span style={{fontSize:10,fontWeight:600,letterSpacing:'0.14em',
+            textTransform:'uppercase',color:labelColor,fontFamily:'Inter,sans-serif'}}>
+            {label}
+          </span>
+        </div>
+      )}
+      {children}
+    </div>
+  );
+}
+
 /* Tab: 總覽 */
 function TabOverview({risk,onUpdate,opts:optsIn}){
   const opts=optsIn||OPTS;
@@ -1661,9 +1713,8 @@ function TabOverview({risk,onUpdate,opts:optsIn}){
   };
 
   return(
-    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
-      <div style={{gridColumn:'span 2'}}>
-        <SectionLabel>基本資訊</SectionLabel>
+    <div>
+      <SectionLabel>基本資訊</SectionLabel>
         <div style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr 1fr',gap:12}}>
           <div>
             <div style={{fontSize:11,color:C.txt,fontWeight:600,marginBottom:4,fontFamily:'Inter,sans-serif'}}>風險名稱</div>
@@ -1719,8 +1770,7 @@ function TabOverview({risk,onUpdate,opts:optsIn}){
           );
         })()}
       </div>
-      <div style={{gridColumn:'span 2'}}>
-        <SectionLabel>場景定義</SectionLabel>
+      <SectionLabel>場景定義</SectionLabel>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
           {[
             {k:'asset',label:'受影響資產',opts:opts.assets},
@@ -1743,7 +1793,6 @@ function TabOverview({risk,onUpdate,opts:optsIn}){
               placeholder="分析前提與假設說明…"/>
           </div>
         </div>
-      </div>
       <div style={{gridColumn:'span 2',display:'flex',justifyContent:'flex-end',
         alignItems:'center',gap:12}}>
         {saved&&!isDirty&&(
@@ -1765,7 +1814,6 @@ function TabOverview({risk,onUpdate,opts:optsIn}){
           style={saved&&!isDirty?{color:C.grn,borderColor:C.grn,background:'transparent',opacity:0.8}:{}}
         />
       </div>
-    </div>
   );
 }
 
@@ -2083,9 +2131,10 @@ function TabEvaluation({risk,onUpdate}){
   };
   if(!risk.fairResult){
     return(
-      <div style={{textAlign:'center',padding:'40px 20px',color:C.fnt,fontFamily:'Inter,sans-serif'}}>
-        請先在「FAIR 分析」標籤執行蒙地卡羅模擬，才能進行風險評估。
-      </div>
+      
+        <div style={{textAlign:'center',padding:'40px 20px',color:C.fnt,fontFamily:'Inter,sans-serif'}}>
+          請先在「FAIR 分析」標籤執行蒙地卡羅模擬，才能進行風險評估。
+        </div>
     );
   }
   const r=risk.fairResult;
@@ -2108,7 +2157,7 @@ function TabEvaluation({risk,onUpdate}){
   ];
   return(
     <div>
-      {/* A. FAIR 結果摘要 */}
+      {/* A. FAIR 結果摘要 — dark */}
       <SectionLabel>FAIR 量化結果摘要 · FAIR Analysis Summary</SectionLabel>
       <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:8,marginBottom:16}}>
         {[
@@ -2299,22 +2348,23 @@ function TabEvaluation({risk,onUpdate}){
         </div>
       </div>
 
-      <div style={{display:'flex',justifyContent:'flex-end',alignItems:'center',gap:12}}>
-        {saved&&!isDirty&&(
-          <span style={{fontSize:12,color:C.grn,fontFamily:'Inter,sans-serif',
-            display:'flex',alignItems:'center',gap:5}}>
-            <span style={{fontSize:15}}>✓</span> 已儲存
-          </span>
-        )}
-        {!isDirty&&!saved&&(
-          <span style={{fontSize:12,color:C.fnt,fontFamily:'Inter,sans-serif'}}>尚無變更</span>
-        )}
-        <Btn ch={saved&&!isDirty?'儲存完成 ✓':'儲存變更'}
-          onClick={isDirty?save:undefined} disabled={!isDirty||!ed.decision}
-          v={saved&&!isDirty?'ghost':'primary'}
-          style={saved&&!isDirty?{color:C.grn,borderColor:C.grn,background:'transparent',opacity:0.8}:{}}/>
+      
+        <div style={{display:'flex',justifyContent:'flex-end',alignItems:'center',gap:12}}>
+          {saved&&!isDirty&&(
+            <span style={{fontSize:12,color:C.grn,fontFamily:'Inter,sans-serif',
+              display:'flex',alignItems:'center',gap:5}}>
+              <span style={{fontSize:15}}>✓</span> 已儲存
+            </span>
+          )}
+          {!isDirty&&!saved&&(
+            <span style={{fontSize:12,color:C.fnt,fontFamily:'Inter,sans-serif'}}>尚無變更</span>
+          )}
+          <Btn ch={saved&&!isDirty?'儲存完成 ✓':'儲存變更'}
+            onClick={isDirty?save:undefined} disabled={!isDirty||!ed.decision}
+            v={saved&&!isDirty?'ghost':'primary'}
+            style={saved&&!isDirty?{color:C.grn,borderColor:C.grn,background:'transparent',opacity:0.8}:{}}/>
+        </div>
       </div>
-    </div>
   );
 }
 
@@ -2374,7 +2424,7 @@ function TabTreatment({risk,onUpdate}){
   const r=risk.fairResult;
   return(
     <div>
-      {/* A. 應對策略 */}
+      {/* A. 應對策略 — dark hero block */}
       <SectionLabel>應對策略 · Treatment Strategy</SectionLabel>
       <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8,marginBottom:16}}>
         {strategies.map(s=>(
@@ -2444,7 +2494,7 @@ function TabTreatment({risk,onUpdate}){
         ))}
       </div>
 
-      {/* D. 預期殘餘風險（結構化前後對比）*/}
+      {/* D. 預期殘餘風險 */}
       <SectionLabel>預期殘餘風險 · Expected Residual Risk</SectionLabel>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:14}}>
         {/* Current */}
@@ -2548,20 +2598,23 @@ function TabTreatment({risk,onUpdate}){
         </div>
       </div>
 
-      <div style={{display:'flex',justifyContent:'flex-end',alignItems:'center',gap:12}}>
-        {saved&&!isDirty&&(
-          <span style={{fontSize:12,color:C.grn,fontFamily:'Inter,sans-serif',
-            display:'flex',alignItems:'center',gap:5}}>
-            <span style={{fontSize:15}}>✓</span> 已儲存
-          </span>
-        )}
-        {!isDirty&&!saved&&(
-          <span style={{fontSize:12,color:C.fnt,fontFamily:'Inter,sans-serif'}}>尚無變更</span>
-        )}
-        <Btn ch={saved&&!isDirty?'儲存完成 ✓':'儲存變更'}
-          onClick={isDirty?save:undefined} disabled={!isDirty}
-          v={saved&&!isDirty?'ghost':'primary'}
-          style={saved&&!isDirty?{color:C.grn,borderColor:C.grn,background:'transparent',opacity:0.8}:{}}/>
+      {/* Save */}
+      
+        <div style={{display:'flex',justifyContent:'flex-end',alignItems:'center',gap:12}}>
+          {saved&&!isDirty&&(
+            <span style={{fontSize:12,color:C.grn,fontFamily:'Inter,sans-serif',
+              display:'flex',alignItems:'center',gap:5}}>
+              <span style={{fontSize:15}}>✓</span> 已儲存
+            </span>
+          )}
+          {!isDirty&&!saved&&(
+            <span style={{fontSize:12,color:C.fnt,fontFamily:'Inter,sans-serif'}}>尚無變更</span>
+          )}
+          <Btn ch={saved&&!isDirty?'儲存完成 ✓':'儲存變更'}
+            onClick={isDirty?save:undefined} disabled={!isDirty}
+            v={saved&&!isDirty?'ghost':'primary'}
+            style={saved&&!isDirty?{color:C.grn,borderColor:C.grn,background:'transparent',opacity:0.8}:{}}/>
+        </div>
       </div>
     </div>
   );
@@ -2666,7 +2719,7 @@ function TabMonitoring({risk,onUpdate}){
       )}
 
       <SectionLabel>監控設定 · Monitoring Configuration</SectionLabel>
-      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:14}}>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:0}}>
         <div>
           <div style={{fontSize:11,color:C.txt,fontWeight:600,marginBottom:6,fontFamily:'Inter,sans-serif'}}>複查週期</div>
           <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:6}}>
@@ -2729,10 +2782,12 @@ function TabMonitoring({risk,onUpdate}){
           <TInput value={ed.notes} onChange={e=>upd('notes',e.target.value)} rows={2}
             placeholder="例：每月由安全團隊提交 KRI 報告；控制效能複查列入季度稽核"/>
         </div>
+        </div>
       </div>
 
       {/* ── KRI 區塊 ── */}
-      <div style={{border:`1px solid ${C.bdr}`,borderRadius:6,overflow:'hidden',marginBottom:14}}>
+      <SectionLabel>關鍵風險指標（KRI）</SectionLabel>
+      <div style={{margin:'0 -32px -30px',overflow:'hidden'}}>
         {/* KRI header */}
         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',
           padding:'12px 16px',background:'#F0EDE8',
@@ -2992,6 +3047,7 @@ function TabMonitoring({risk,onUpdate}){
         )}
       </div>
 
+
       {/* 風險生命週期 */}
       <SectionLabel>風險生命週期</SectionLabel>
       <div style={{marginBottom:16}}>
@@ -3022,25 +3078,25 @@ function TabMonitoring({risk,onUpdate}){
         })}
       </div>
 
-      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-        <Btn ch="結案此風險" onClick={closeRisk} v="ghost" style={{color:C.sub,fontSize:12}}/>
-        <div style={{display:'flex',alignItems:'center',gap:12}}>
-          {saved&&!isDirty&&(
-            <span style={{fontSize:12,color:C.grn,fontFamily:'Inter,sans-serif',
-              display:'flex',alignItems:'center',gap:5}}>
-              <span style={{fontSize:15}}>✓</span> 已儲存
-            </span>
-          )}
-          {!isDirty&&!saved&&(
-            <span style={{fontSize:12,color:C.fnt,fontFamily:'Inter,sans-serif'}}>尚無變更</span>
-          )}
-          <Btn ch={saved&&!isDirty?'儲存完成 ✓':'儲存變更'}
-            onClick={isDirty?save:undefined} disabled={!isDirty}
-            v={saved&&!isDirty?'ghost':'primary'}
-            style={saved&&!isDirty?{color:C.grn,borderColor:C.grn,background:'transparent',opacity:0.8}:{}}/>
+      
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          <Btn ch="結案此風險" onClick={closeRisk} v="ghost" style={{color:C.sub,fontSize:12}}/>
+          <div style={{display:'flex',alignItems:'center',gap:12}}>
+            {saved&&!isDirty&&(
+              <span style={{fontSize:12,color:C.grn,fontFamily:'Inter,sans-serif',
+                display:'flex',alignItems:'center',gap:5}}>
+                <span style={{fontSize:15}}>✓</span> 已儲存
+              </span>
+            )}
+            {!isDirty&&!saved&&(
+              <span style={{fontSize:12,color:C.fnt,fontFamily:'Inter,sans-serif'}}>尚無變更</span>
+            )}
+            <Btn ch={saved&&!isDirty?'儲存完成 ✓':'儲存變更'}
+              onClick={isDirty?save:undefined} disabled={!isDirty}
+              v={saved&&!isDirty?'ghost':'primary'}
+              style={saved&&!isDirty?{color:C.grn,borderColor:C.grn,background:'transparent',opacity:0.8}:{}}/>
+          </div>
         </div>
-      </div>
-    </div>
   );
 }
 
@@ -3916,7 +3972,7 @@ function TabDecision({risk}){
                 {(ip.managementInterpretation||ip.roiNote)&&(
                   <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
                     {ip.roiNote&&(
-                      <div style={{padding:'10px 12px',background:'#EBF0FF',
+                      <div style={{padding:'10px 12px',background:'#EAF0DC',
                         borderRadius:3,border:`1px solid ${C.blu}30`}}>
                         <div style={{fontSize:10,fontWeight:600,color:C.blu,marginBottom:4,
                           fontFamily:'Inter,sans-serif'}}>ROI / 成本效益說明</div>
@@ -4022,26 +4078,23 @@ function RiskDetail({risk,onUpdate,onBack,opts:optsIn,initialTab}){
       </div>
 
       {/* Tabs */}
-      <div style={{display:'flex',gap:0,marginBottom:0,
-        background:C.txt,borderRadius:'4px 4px 0 0',
-        border:`1px solid ${C.txt}`,overflow:'hidden'}}>
+      <div style={{display:'flex',gap:0,marginBottom:16,
+        borderBottom:`2px solid ${C.bdr}`,background:C.surf,borderRadius:'4px 4px 0 0',
+        border:`1px solid ${C.bdr}`,overflow:'hidden'}}>
         {TABS.map(t=>{
           const act=tab===t.id;
           return(
             <button key={t.id} onClick={()=>setTab(t.id)} style={{
-              padding:'11px 20px',fontSize:12.5,fontWeight:act?700:400,
+              padding:'11px 18px',fontSize:12.5,fontWeight:act?600:400,
               fontFamily:'Inter,sans-serif',cursor:'pointer',
-              border:'none',
-              borderBottom:act?'3px solid white':'3px solid transparent',
-              background:act?'rgba(255,255,255,0.14)':'transparent',
-              color:act?'white':'rgba(255,255,255,0.58)',
-              transition:'all .15s',
+              border:'none',borderBottom:act?`2px solid ${C.txt}`:'2px solid transparent',
+              background:act?'white':'transparent',color:act?C.txt:C.sub,
+              marginBottom:act?'-1px':'0',transition:'color .12s',
               display:'flex',alignItems:'center',gap:6}}>
               {t.label}
               {t.badge&&(
                 <span style={{fontSize:10,
-                  background:'rgba(255,255,255,0.18)',
-                  color:'rgba(255,255,255,0.88)',
+                  background:C.bg,color:C.sub,
                   padding:'1px 6px',borderRadius:2,fontFamily:'Inter,sans-serif',
                   fontWeight:500}}>{decMap[t.badge]||t.badge}</span>
               )}
