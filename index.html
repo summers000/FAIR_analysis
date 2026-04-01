@@ -4072,21 +4072,24 @@ function RiskDetail({risk,onUpdate,onBack,opts:optsIn,initialTab}){
 /* ═══════════════════════════════════════════════════
    KRI OVERVIEW PAGE
 ═══════════════════════════════════════════════════ */
-function KriOverview({risks,onOpenRisk}){
+function KriOverview({risks,onUpdateRisk,onOpenRisk,csvHelpers}){
+  const{csvEscape,csvRow,downloadCsv,parseCsvLine}=csvHelpers;
   const[filterStatus,setFilterStatus]=useState('');
   const[filterCycle,setFilterCycle]=useState('');
   const[filterRisk,setFilterRisk]=useState('');
   const[search,setSearch]=useState('');
+  const[editKriId,setEditKriId]=useState(null);
+  const[showAddForm,setShowAddForm]=useState(false);
+  const[addForm,setAddForm]=useState({});
+  const[importMsg,setImportMsg]=useState(null);
+  const fileRef=React.useRef();
 
-  /* Flatten all KRIs across all risks */
+  /* Flatten all KRIs */
   const allKris=useMemo(()=>{
     const out=[];
-    risks.forEach(r=>{
-      (r.kriList||[]).forEach(k=>{
-        out.push({...k,_riskId:r.id,_riskName:r.name||'(未命名)',
-          _riskPriority:r.priority});
-      });
-    });
+    risks.forEach(r=>(r.kriList||[]).forEach(k=>{
+      out.push({...k,_riskId:r.id,_riskName:r.name||'(未命名)',_riskPriority:r.priority});
+    }));
     return out;
   },[risks]);
 
@@ -4103,27 +4106,238 @@ function KriOverview({risks,onOpenRisk}){
   const yel=allKris.filter(k=>k.status==='yellow').length;
   const grn=allKris.length-red-yel;
   const triggered=allKris.filter(k=>k.triggerReassessment).length;
-
   const usedCycles=[...new Set(allKris.map(k=>k.processCycle).filter(Boolean))];
+
+  /* ── KRI CRUD helpers ── */
+  const calcStatus=(k)=>{
+    const cur=parseFloat(k.currentValue)||0;
+    const red=parseFloat(k.redThreshold)||0;
+    const yel=parseFloat(k.yellowThreshold)||0;
+    if(red>0&&cur>=red)return'red';
+    if(yel>0&&cur>=yel)return'yellow';
+    return'green';
+  };
+  const getRisk=id=>risks.find(r=>r.id===id);
+  const saveKri=(riskId,kriId,patch)=>{
+    const r=getRisk(riskId);
+    if(!r)return;
+    const updated=r.kriList.map(k=>{
+      if(k.id!==kriId)return k;
+      const merged={...k,...patch};
+      merged.status=calcStatus(merged);
+      return merged;
+    });
+    onUpdateRisk({...r,kriList:updated,updatedAt:today()});
+    setEditKriId(null);
+  };
+  const deleteKri=(riskId,kriId)=>{
+    const r=getRisk(riskId);
+    if(!r)return;
+    onUpdateRisk({...r,kriList:r.kriList.filter(k=>k.id!==kriId),updatedAt:today()});
+  };
+  const addKri=()=>{
+    if(!addForm.riskId||!addForm.name?.trim())return;
+    const r=getRisk(addForm.riskId);
+    if(!r)return;
+    const nk={...mkKri(),...addForm,id:mkKri().id};
+    nk.status=calcStatus(nk);
+    onUpdateRisk({...r,kriList:[...r.kriList,nk],updatedAt:today()});
+    setShowAddForm(false);
+    setAddForm({});
+  };
+
+  /* ── CSV export KRI ── */
+  const exportKri=()=>{
+    const COLS=['KRI名稱','指標說明','所屬風險','所屬循環','目前值','單位',
+      '黃燈門檻','紅燈門檻','趨勢','更新頻率','資料來源','指標負責人','狀態','觸發重評估','備註'];
+    const rows=[csvRow(COLS)];
+    allKris.forEach(k=>{
+      rows.push(csvRow([
+        k.name||'',k.description||'',k._riskName,k.processCycle||'',
+        k.currentValue||'',k.unit||'',k.yellowThreshold||'',k.redThreshold||'',
+        k.trend||'stable',k.updateFrequency||'',k.dataSource||'',k.owner||'',
+        k.status||'green',k.triggerReassessment?'是':'否',k.notes||'',
+      ]));
+    });
+    downloadCsv(rows,`KRI總覽_${new Date().toISOString().slice(0,10)}.csv`);
+  };
+
+  /* ── CSV import KRI ── */
+  const importKri=(e)=>{
+    const file=e.target.files[0];
+    if(!file)return;
+    const reader=new FileReader();
+    reader.onload=ev=>{
+      try{
+        const text=ev.target.result.replace(/^\uFEFF/,'');
+        const lines2=text.split(/\r?\n/).filter(l=>l.trim());
+        if(lines2.length<2)throw new Error('CSV 沒有資料列');
+        const hdr=parseCsvLine(lines2[0]);
+        const idx=k=>hdr.findIndex(h=>h.trim()===k);
+        const iName=idx('KRI名稱'),iRisk=idx('所屬風險'),
+              iCyc=idx('所屬循環'),iVal=idx('目前值'),iUnit=idx('單位'),
+              iYel=idx('黃燈門檻'),iRed=idx('紅燈門檻'),
+              iTrend=idx('趨勢'),iFreq=idx('更新頻率'),
+              iSrc=idx('資料來源'),iOwn=idx('指標負責人'),
+              iNote=idx('備註');
+        if(iName<0)throw new Error('找不到「KRI名稱」欄位');
+        if(iRisk<0)throw new Error('找不到「所屬風險」欄位');
+        let added=0,skipped=0;
+        const risksByName={};
+        risks.forEach(r=>{risksByName[r.name]=r;});
+        const updates={};
+        for(let i=1;i<lines2.length;i++){
+          const cols=parseCsvLine(lines2[i]);
+          const name=cols[iName]?.trim();
+          const riskName=iRisk>=0?cols[iRisk]?.trim():'';
+          if(!name||!riskName){skipped++;continue;}
+          const r=risksByName[riskName];
+          if(!r){skipped++;continue;}
+          const existing=(updates[r.id]?.kriList||r.kriList||[]);
+          if(existing.some(k=>k.name===name)){skipped++;continue;}
+          const nk={...mkKri(),
+            name,
+            processCycle:iCyc>=0?cols[iCyc]?.trim():'',
+            currentValue:iVal>=0?cols[iVal]?.trim():'',
+            unit:iUnit>=0?cols[iUnit]?.trim():'',
+            yellowThreshold:iYel>=0?cols[iYel]?.trim():'',
+            redThreshold:iRed>=0?cols[iRed]?.trim():'',
+            trend:iTrend>=0?cols[iTrend]?.trim()||'stable':'stable',
+            updateFrequency:iFreq>=0?cols[iFreq]?.trim():'monthly',
+            dataSource:iSrc>=0?cols[iSrc]?.trim():'',
+            owner:iOwn>=0?cols[iOwn]?.trim():'',
+            notes:iNote>=0?cols[iNote]?.trim():'',
+          };
+          nk.status=calcStatus(nk);
+          if(!updates[r.id])updates[r.id]={...r,kriList:[...r.kriList]};
+          updates[r.id].kriList.push(nk);
+          added++;
+        }
+        Object.values(updates).forEach(r=>onUpdateRisk({...r,updatedAt:today()}));
+        setImportMsg({type:'ok',
+          text:`成功匯入 ${added} 筆 KRI${skipped>0?`（已略過 ${skipped} 筆）`:''}`});
+      }catch(err){
+        setImportMsg({type:'err',text:`KRI 匯入失敗：${err.message}`});
+      }
+      e.target.value='';
+    };
+    reader.readAsText(file,'UTF-8');
+  };
+
+  /* ── Inline edit state ── */
+  const[editData,setEditData]=useState({});
+  const[pendingDelete,setPendingDelete]=useState(null); /* {riskId,kriId} */
+  const startEdit=(k)=>{setEditKriId(k.id);setEditData({...k});};
+  const cancelEdit=()=>{setEditKriId(null);setEditData({});setPendingDelete(null);};
+  const updEdit=(field,val)=>setEditData(p=>({...p,[field]:val}));
+
+  /* toast auto-dismiss */
+  useEffect(()=>{
+    if(!importMsg)return;
+    const t=setTimeout(()=>setImportMsg(null),4000);
+    return()=>clearTimeout(t);
+  },[importMsg]);
 
   return(
     <div>
-      {/* Page title */}
-      <div style={{marginBottom:18}}>
-        <h1 className="serif" style={{fontSize:28,fontWeight:700,color:C.txt,
-          letterSpacing:'-0.01em',lineHeight:1.15}}>KRI 總覽</h1>
-        <p style={{fontSize:13,color:C.sub,marginTop:4,fontFamily:'Inter,sans-serif'}}>
-          跨所有風險的關鍵風險指標彙整 · 點擊「開啟」可直接跳至對應風險的監控頁
-        </p>
+      {/* Page title + KRI CSV buttons */}
+      <div style={{display:'flex',justifyContent:'space-between',
+        alignItems:'flex-start',marginBottom:18}}>
+        <div>
+          <h1 className="serif" style={{fontSize:28,fontWeight:700,color:C.txt,
+            letterSpacing:'-0.01em',lineHeight:1.15}}>KRI 總覽</h1>
+          <p style={{fontSize:13,color:C.sub,marginTop:4,fontFamily:'Inter,sans-serif'}}>
+            跨所有風險的關鍵風險指標彙整 · 在此頁可新增、編輯、刪除 KRI
+          </p>
+        </div>
+        <div style={{display:'flex',gap:8,alignItems:'center',flexShrink:0,marginLeft:16}}>
+          <button onClick={exportKri} disabled={allKris.length===0}
+            style={{padding:'6px 14px',background:'transparent',
+              border:`1px solid ${C.bdr}`,borderRadius:3,cursor:'pointer',
+              fontSize:12,color:C.sub,fontFamily:'Inter,sans-serif',
+              opacity:allKris.length===0?0.4:1}}>
+            ↑ 匯出 KRI CSV
+          </button>
+          <label style={{padding:'6px 14px',background:'transparent',
+            border:`1px solid ${C.bdr}`,borderRadius:3,cursor:'pointer',
+            fontSize:12,color:C.sub,fontFamily:'Inter,sans-serif'}}>
+            ↓ 匯入 KRI CSV
+            <input type="file" accept=".csv,text/csv"
+              onChange={importKri} style={{display:'none'}}/>
+          </label>
+          <button onClick={()=>{setShowAddForm(v=>!v);setAddForm({});}}
+            style={{padding:'6px 16px',background:C.txt,color:'white',
+              border:'none',borderRadius:3,cursor:'pointer',
+              fontSize:12.5,fontFamily:'Inter,sans-serif',fontWeight:600}}>
+            + 新增 KRI
+          </button>
+        </div>
       </div>
 
+      {/* Add form */}
+      {showAddForm&&(
+        <div className="fade" style={{background:'#F6F4EF',border:`1px solid ${C.bdr}`,
+          borderRadius:6,padding:'16px 18px',marginBottom:16}}>
+          <div style={{fontSize:11,fontWeight:700,color:C.txt,letterSpacing:'0.08em',
+            textTransform:'uppercase',marginBottom:12,fontFamily:'Inter,sans-serif'}}>
+            新增 KRI
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10,marginBottom:10}}>
+            <div>
+              <div style={{fontSize:11,color:C.txt,fontWeight:600,marginBottom:3,fontFamily:'Inter,sans-serif'}}>所屬風險 *</div>
+              <TSelect value={addForm.riskId||''}
+                onChange={e=>setAddForm(p=>({...p,riskId:e.target.value}))}
+                options={risks.map(r=>({v:r.id,l:r.name||'(未命名)'}))}
+                placeholder="— 選擇風險 —" sm/>
+            </div>
+            <div style={{gridColumn:'span 2'}}>
+              <div style={{fontSize:11,color:C.txt,fontWeight:600,marginBottom:3,fontFamily:'Inter,sans-serif'}}>KRI 名稱 *</div>
+              <TInput value={addForm.name||''} onChange={e=>setAddForm(p=>({...p,name:e.target.value}))}
+                placeholder="例：特權帳號異常登入次數" sm/>
+            </div>
+            <div>
+              <div style={{fontSize:11,color:C.txt,fontWeight:600,marginBottom:3,fontFamily:'Inter,sans-serif'}}>所屬循環</div>
+              <TSelect value={addForm.processCycle||''}
+                onChange={e=>setAddForm(p=>({...p,processCycle:e.target.value}))}
+                options={PROCESS_CYCLES.map(c=>({v:c,l:c}))} placeholder="— 選擇 —" sm/>
+            </div>
+            <div>
+              <div style={{fontSize:11,color:C.txt,fontWeight:600,marginBottom:3,fontFamily:'Inter,sans-serif'}}>目前值</div>
+              <TInput value={addForm.currentValue||''} onChange={e=>setAddForm(p=>({...p,currentValue:e.target.value}))} placeholder="例：15" sm/>
+            </div>
+            <div>
+              <div style={{fontSize:11,color:C.txt,fontWeight:600,marginBottom:3,fontFamily:'Inter,sans-serif'}}>單位</div>
+              <TInput value={addForm.unit||''} onChange={e=>setAddForm(p=>({...p,unit:e.target.value}))} placeholder="例：次 / %" sm/>
+            </div>
+            <div>
+              <div style={{fontSize:11,color:C.amb,fontWeight:600,marginBottom:3,fontFamily:'Inter,sans-serif'}}>黃燈門檻</div>
+              <TInput value={addForm.yellowThreshold||''} onChange={e=>setAddForm(p=>({...p,yellowThreshold:e.target.value}))} placeholder="例：10" sm/>
+            </div>
+            <div>
+              <div style={{fontSize:11,color:C.red,fontWeight:600,marginBottom:3,fontFamily:'Inter,sans-serif'}}>紅燈門檻</div>
+              <TInput value={addForm.redThreshold||''} onChange={e=>setAddForm(p=>({...p,redThreshold:e.target.value}))} placeholder="例：20" sm/>
+            </div>
+            <div>
+              <div style={{fontSize:11,color:C.txt,fontWeight:600,marginBottom:3,fontFamily:'Inter,sans-serif'}}>指標負責人</div>
+              <TInput value={addForm.owner||''} onChange={e=>setAddForm(p=>({...p,owner:e.target.value}))} placeholder="例：SOC 團隊" sm/>
+            </div>
+          </div>
+          <div style={{display:'flex',justifyContent:'flex-end',gap:8}}>
+            <Btn ch="取消" sm v="ghost" onClick={()=>setShowAddForm(false)}/>
+            <Btn ch="確認新增" sm v="primary"
+              onClick={addKri}
+              disabled={!addForm.riskId||!addForm.name?.trim()}/>
+          </div>
+        </div>
+      )}
+
       {/* Stats */}
-      <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:10,marginBottom:18}}>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:10,marginBottom:16}}>
         {[
           {n:total,    l:'KRI 總數',       c:C.txt,  border:C.bdr},
-          {n:red,      l:'紅燈（立即關注）',c:C.red,  border:C.red+'50'},
-          {n:yel,      l:'黃燈（需追蹤）', c:C.amb,  border:C.amb+'50'},
-          {n:grn,      l:'綠燈（正常）',   c:C.grn,  border:C.grn+'50'},
+          {n:red,      l:'紅燈',           c:C.red,  border:C.red+'50'},
+          {n:yel,      l:'黃燈',           c:C.amb,  border:C.amb+'50'},
+          {n:grn,      l:'綠燈',           c:C.grn,  border:C.grn+'50'},
           {n:triggered,l:'觸發重評估',     c:triggered>0?C.red:C.fnt,border:triggered>0?C.red+'50':C.bdr},
         ].map(({n,l,c,border})=>(
           <div key={l} style={{background:C.surf,border:`1px solid ${border}`,
@@ -4146,17 +4360,16 @@ function KriOverview({risks,onOpenRisk}){
           options={[{v:'red',l:'紅燈'},{v:'yellow',l:'黃燈'},{v:'green',l:'綠燈'}]}
           placeholder="所有狀態"/>
         <TSelect value={filterCycle} onChange={e=>setFilterCycle(e.target.value)} sm
-          options={usedCycles.map(c=>({v:c,l:c}))}
-          placeholder="所有循環"/>
+          options={usedCycles.map(c=>({v:c,l:c}))} placeholder="所有循環"/>
         <TSelect value={filterRisk} onChange={e=>setFilterRisk(e.target.value)} sm
-          options={risks.filter(r=>(r.kriList||[]).length>0).map(r=>({v:r.id,l:r.name||'(未命名)' }))}
+          options={risks.filter(r=>(r.kriList||[]).length>0).map(r=>({v:r.id,l:r.name||'(未命名)'}))}
           placeholder="所有風險"/>
         {(filterStatus||filterCycle||filterRisk||search)&&(
-          <Btn ch="清除篩選" sm v="ghost"
+          <Btn ch="清除" sm v="ghost"
             onClick={()=>{setFilterStatus('');setFilterCycle('');setFilterRisk('');setSearch('');}}/>
         )}
         <span style={{marginLeft:'auto',fontSize:11.5,color:C.sub,fontFamily:'Inter,sans-serif'}}>
-          顯示 {filtered.length} 項
+          顯示 {filtered.length} / {total} 項
         </span>
       </div>
 
@@ -4166,21 +4379,19 @@ function KriOverview({risks,onOpenRisk}){
           fontFamily:'Inter,sans-serif',background:C.surf,borderRadius:4,
           border:`1px solid ${C.bdr}`}}>
           尚未在任何風險中設定 KRI。<br/>
-          <span style={{fontSize:12.5}}>請進入個別風險的「監控」標籤新增 KRI。</span>
+          <span style={{fontSize:12.5}}>點擊「+ 新增 KRI」或進入個別風險的「監控」標籤新增。</span>
         </div>
       ):filtered.length===0?(
         <div style={{textAlign:'center',padding:'36px 20px',color:C.fnt,
           fontFamily:'Inter,sans-serif',background:C.surf,borderRadius:4,
-          border:`1px solid ${C.bdr}`}}>
-          沒有符合條件的 KRI。
-        </div>
+          border:`1px solid ${C.bdr}`}}>沒有符合條件的 KRI。</div>
       ):(
         <div style={{background:C.surf,border:`1px solid ${C.bdr}`,
           borderRadius:4,overflow:'hidden'}}>
           {/* Header */}
           <div style={{display:'grid',
-            gridTemplateColumns:'2fr 1.8fr 1fr 0.9fr 0.85fr 1.1fr 0.85fr 0.7fr',
-            padding:'8px 16px',background:'#F6F4EF',
+            gridTemplateColumns:'2fr 1.6fr 0.9fr 0.85fr 0.75fr 1fr 0.8fr 1fr',
+            padding:'7px 14px',background:'#F6F4EF',
             borderBottom:`1px solid ${C.bdr}`,
             fontSize:10.5,fontWeight:600,color:C.fnt,
             letterSpacing:'0.08em',textTransform:'uppercase',
@@ -4193,116 +4404,175 @@ function KriOverview({risks,onOpenRisk}){
           {filtered.map((k,i)=>{
             const sCfg=KRI_STATUS_CFG[k.status]||KRI_STATUS_CFG.green;
             const tCfg=KRI_TREND[k.trend]||KRI_TREND.stable;
-            const rowBg=k.status==='red'?'#FFF9F9':k.status==='yellow'?'#FFFDF6'
-              :i%2===0?C.surf:'#FAFAF8';
+            const rowBg=k.status==='red'?'#FFF9F9':k.status==='yellow'?'#FFFDF6':i%2===0?C.surf:'#FAFAF8';
+            const isEditing=editKriId===k.id;
             return(
-              <div key={k.id} style={{
-                display:'grid',
-                gridTemplateColumns:'2fr 1.8fr 1fr 0.9fr 0.85fr 1.1fr 0.85fr 0.7fr',
-                padding:'11px 16px',
-                borderBottom:i<filtered.length-1?`1px solid ${C.bdr}`:'none',
-                alignItems:'start',background:rowBg,
-                transition:'background .1s',
-              }}
-              onMouseEnter={e=>e.currentTarget.style.background='#F5F2EC'}
-              onMouseLeave={e=>e.currentTarget.style.background=rowBg}>
-                {/* KRI name */}
-                <div style={{paddingRight:6}}>
-                  <div style={{fontSize:13,fontWeight:500,color:C.txt,
-                    fontFamily:'Inter,sans-serif',lineHeight:1.4}}>
-                    {k.name||'（未命名 KRI）'}
+              <div key={k.id}>
+                {/* Normal row */}
+                <div style={{display:'grid',
+                  gridTemplateColumns:'2fr 1.6fr 0.9fr 0.85fr 0.75fr 1fr 0.8fr 1fr',
+                  padding:'10px 14px',
+                  borderBottom:`1px solid ${C.bdr}`,
+                  alignItems:'center',background:rowBg,transition:'background .1s',}}
+                  onMouseEnter={e=>e.currentTarget.style.background='#F0EDE8'}
+                  onMouseLeave={e=>e.currentTarget.style.background=rowBg}>
+                  <div>
+                    <div style={{fontSize:13,fontWeight:500,color:C.txt,
+                      fontFamily:'Inter,sans-serif',lineHeight:1.4}}>
+                      {k.name||'（未命名）'}
+                    </div>
+                    {k.triggerReassessment&&(
+                      <div style={{fontSize:10,color:C.red,fontWeight:600,
+                        fontFamily:'Inter,sans-serif',marginTop:1}}>⚠ 觸發重評估</div>
+                    )}
                   </div>
-                  {k.triggerReassessment&&(
-                    <div style={{fontSize:10,color:C.red,marginTop:2,
-                      fontFamily:'Inter,sans-serif',fontWeight:600}}>
-                      ⚠ 觸發重評估
-                    </div>
-                  )}
-                  {k.notes&&(
-                    <div style={{fontSize:10.5,color:C.fnt,marginTop:2,
-                      fontFamily:'Inter,sans-serif',lineHeight:1.4,
-                      overflow:'hidden',textOverflow:'ellipsis',
-                      display:'-webkit-box',WebkitLineClamp:2,
-                      WebkitBoxOrient:'vertical'}}>
-                      {k.notes}
-                    </div>
-                  )}
-                </div>
-                {/* Risk link */}
-                <div style={{fontSize:12,color:C.sub,fontFamily:'Inter,sans-serif',
-                  lineHeight:1.4,paddingRight:6}}>
-                  <div style={{color:C.txt,fontWeight:500}}>{k._riskName}</div>
-                  {k._riskPriority&&(
-                    <PriBadge priority={k._riskPriority} small/>
-                  )}
-                </div>
-                {/* Cycle */}
-                <div>
-                  {k.processCycle?(
-                    <span style={{fontSize:10,fontWeight:500,
-                      color:C.blu,background:C.bluL,
-                      padding:'2px 7px',borderRadius:2,
-                      fontFamily:'Inter,sans-serif',display:'inline-block'}}>
-                      {k.processCycle}
+                  <div>
+                    <div style={{fontSize:12,fontWeight:500,color:C.txt,fontFamily:'Inter,sans-serif'}}>{k._riskName}</div>
+                    {k._riskPriority&&<PriBadge priority={k._riskPriority} small/>}
+                  </div>
+                  <div>{k.processCycle?(
+                    <span style={{fontSize:10,fontWeight:500,color:C.blu,background:C.bluL,
+                      padding:'2px 6px',borderRadius:2,fontFamily:'Inter,sans-serif',display:'inline-block'}}>
+                      {k.processCycle.replace(' / ','/')}
                     </span>
-                  ):(
-                    <span style={{color:C.fnt,fontSize:11.5}}>—</span>
-                  )}
+                  ):'—'}</div>
+                  <div style={{fontSize:13,fontWeight:600,color:sCfg.color,fontFamily:'Inter,sans-serif'}}>
+                    {k.currentValue||'—'}
+                    {k.unit&&k.currentValue&&(
+                      <span style={{fontSize:10.5,fontWeight:400,color:C.fnt,marginLeft:2}}>{k.unit}</span>
+                    )}
+                  </div>
+                  <div style={{fontSize:11.5,fontWeight:500,color:tCfg.color,fontFamily:'Inter,sans-serif'}}>
+                    {tCfg.label}
+                  </div>
+                  <div style={{fontSize:11,color:C.fnt,fontFamily:'Inter,sans-serif',lineHeight:1.7}}>
+                    {k.yellowThreshold&&<div><span style={{color:C.amb}}>黃</span>≥{k.yellowThreshold}</div>}
+                    {k.redThreshold&&<div><span style={{color:C.red}}>紅</span>≥{k.redThreshold}</div>}
+                    {!k.yellowThreshold&&!k.redThreshold&&'—'}
+                  </div>
+                  <div>
+                    <span style={{display:'inline-block',padding:'3px 8px',borderRadius:2,
+                      fontSize:11,fontWeight:600,color:sCfg.color,background:sCfg.bg,
+                      fontFamily:'Inter,sans-serif'}}>{sCfg.label}</span>
+                  </div>
+                  <div style={{display:'flex',gap:5,flexWrap:'wrap'}}>
+                    <Btn ch={isEditing?'收起':'編輯'} sm v="ghost"
+                      onClick={()=>isEditing?cancelEdit():startEdit(k)}/>
+                    <Btn ch="開啟" sm v="outline"
+                      onClick={()=>onOpenRisk(k._riskId,'monitoring')}/>
+                  </div>
                 </div>
-                {/* Current value */}
-                <div style={{fontSize:13,fontWeight:600,
-                  color:sCfg.color,fontFamily:'Inter,sans-serif'}}>
-                  {k.currentValue||'—'}
-                  {k.unit&&k.currentValue&&(
-                    <span style={{fontSize:10.5,fontWeight:400,color:C.fnt,
-                      marginLeft:2,fontFamily:'Inter,sans-serif'}}>{k.unit}</span>
-                  )}
-                </div>
-                {/* Trend */}
-                <div style={{fontSize:11.5,fontWeight:500,
-                  color:tCfg.color,fontFamily:'Inter,sans-serif'}}>
-                  {tCfg.label}
-                </div>
-                {/* Thresholds */}
-                <div style={{fontSize:11,color:C.fnt,fontFamily:'Inter,sans-serif',lineHeight:1.7}}>
-                  {k.yellowThreshold&&(
-                    <div>
-                      <span style={{color:C.amb}}>黃</span> ≥{k.yellowThreshold}
+                {/* Inline edit form */}
+                {isEditing&&(
+                  <div className="fade" style={{padding:'14px 16px',
+                    background:'#F6F4EF',borderBottom:`1px solid ${C.bdr}`}}>
+                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10,marginBottom:10}}>
+                      <div style={{gridColumn:'span 2'}}>
+                        <div style={{fontSize:11,color:C.txt,fontWeight:600,marginBottom:3,fontFamily:'Inter,sans-serif'}}>KRI 名稱</div>
+                        <TInput value={editData.name||''} onChange={e=>updEdit('name',e.target.value)} sm/>
+                      </div>
+                      <div>
+                        <div style={{fontSize:11,color:C.txt,fontWeight:600,marginBottom:3,fontFamily:'Inter,sans-serif'}}>所屬循環</div>
+                        <TSelect value={editData.processCycle||''}
+                          onChange={e=>updEdit('processCycle',e.target.value)}
+                          options={PROCESS_CYCLES.map(c=>({v:c,l:c}))} placeholder="— 選擇 —" sm/>
+                      </div>
+                      <div>
+                        <div style={{fontSize:11,color:C.txt,fontWeight:600,marginBottom:3,fontFamily:'Inter,sans-serif'}}>目前值</div>
+                        <TInput value={editData.currentValue||''} onChange={e=>updEdit('currentValue',e.target.value)} placeholder="例：15" sm/>
+                      </div>
+                      <div>
+                        <div style={{fontSize:11,color:C.txt,fontWeight:600,marginBottom:3,fontFamily:'Inter,sans-serif'}}>單位</div>
+                        <TInput value={editData.unit||''} onChange={e=>updEdit('unit',e.target.value)} placeholder="例：次" sm/>
+                      </div>
+                      <div>
+                        <div style={{fontSize:11,color:C.txt,fontWeight:600,marginBottom:3,fontFamily:'Inter,sans-serif'}}>趨勢</div>
+                        <TSelect value={editData.trend||'stable'}
+                          onChange={e=>updEdit('trend',e.target.value)}
+                          options={Object.entries(KRI_TREND).map(([v,t])=>({v,l:t.label}))} placeholder="— 選擇 —" sm/>
+                      </div>
+                      <div>
+                        <div style={{fontSize:11,color:C.amb,fontWeight:600,marginBottom:3,fontFamily:'Inter,sans-serif'}}>黃燈門檻</div>
+                        <TInput value={editData.yellowThreshold||''} onChange={e=>updEdit('yellowThreshold',e.target.value)} placeholder="例：10" sm/>
+                      </div>
+                      <div>
+                        <div style={{fontSize:11,color:C.red,fontWeight:600,marginBottom:3,fontFamily:'Inter,sans-serif'}}>紅燈門檻</div>
+                        <TInput value={editData.redThreshold||''} onChange={e=>updEdit('redThreshold',e.target.value)} placeholder="例：20" sm/>
+                      </div>
+                      <div>
+                        <div style={{fontSize:11,color:C.txt,fontWeight:600,marginBottom:3,fontFamily:'Inter,sans-serif'}}>指標負責人</div>
+                        <TInput value={editData.owner||''} onChange={e=>updEdit('owner',e.target.value)} placeholder="例：SOC 團隊" sm/>
+                      </div>
+                      <div style={{gridColumn:'span 3'}}>
+                        <div style={{fontSize:11,color:C.txt,fontWeight:600,marginBottom:3,fontFamily:'Inter,sans-serif'}}>備註</div>
+                        <TInput value={editData.notes||''} onChange={e=>updEdit('notes',e.target.value)} rows={2} placeholder="例：每月從 SIEM 統計" sm/>
+                      </div>
                     </div>
-                  )}
-                  {k.redThreshold&&(
-                    <div>
-                      <span style={{color:C.red}}>紅</span> ≥{k.redThreshold}
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                      {/* Left: delete area */}
+                      {pendingDelete&&pendingDelete.kriId===k.id?(
+                        <div style={{display:'flex',alignItems:'center',gap:8,
+                          padding:'6px 12px',background:C.redL,borderRadius:4,
+                          border:`1px solid ${C.red}40`}}>
+                          <span style={{fontSize:12,color:C.red,fontFamily:'Inter,sans-serif',fontWeight:600}}>
+                            確定要刪除此 KRI？
+                          </span>
+                          <button onClick={()=>{deleteKri(k._riskId,k.id);setPendingDelete(null);}}
+                            style={{padding:'4px 12px',background:C.red,color:'white',
+                              border:'none',borderRadius:3,cursor:'pointer',
+                              fontSize:12,fontFamily:'Inter,sans-serif',fontWeight:600}}>
+                            確認刪除
+                          </button>
+                          <button onClick={()=>setPendingDelete(null)}
+                            style={{padding:'4px 10px',background:'transparent',color:C.sub,
+                              border:`1px solid ${C.bdr}`,borderRadius:3,cursor:'pointer',
+                              fontSize:12,fontFamily:'Inter,sans-serif'}}>
+                            取消
+                          </button>
+                        </div>
+                      ):(
+                        <button onClick={()=>setPendingDelete({riskId:k._riskId,kriId:k.id})}
+                          style={{padding:'5px 14px',background:'transparent',color:C.red,
+                            border:`1px solid ${C.red}40`,borderRadius:3,cursor:'pointer',
+                            fontSize:12,fontFamily:'Inter,sans-serif',fontWeight:500}}>
+                          刪除此 KRI
+                        </button>
+                      )}
+                      {/* Right: cancel + save */}
+                      <div style={{display:'flex',gap:8}}>
+                        <Btn ch="取消" sm v="ghost" onClick={cancelEdit}/>
+                        <Btn ch="儲存" sm v="primary"
+                          onClick={()=>saveKri(k._riskId,k.id,editData)}/>
+                      </div>
                     </div>
-                  )}
-                  {!k.yellowThreshold&&!k.redThreshold&&'—'}
-                </div>
-                {/* Status badge */}
-                <div>
-                  <span style={{display:'inline-block',padding:'3px 8px',
-                    borderRadius:2,fontSize:11,fontWeight:600,
-                    color:sCfg.color,background:sCfg.bg,
-                    fontFamily:'Inter,sans-serif'}}>
-                    {sCfg.label}
-                  </span>
-                </div>
-                {/* Action */}
-                <div>
-                  <Btn ch="開啟 →" sm v="outline"
-                    onClick={()=>onOpenRisk(k._riskId,'monitoring')}/>
-                </div>
+                  </div>
+                )}
               </div>
             );
           })}
+        </div>
+      )}
+      {/* Import toast */}
+      {importMsg&&(
+        <div className="fade" style={{
+          position:'fixed',bottom:28,left:'50%',transform:'translateX(-50%)',
+          zIndex:400,padding:'12px 20px',borderRadius:6,
+          background:importMsg.type==='ok'?C.grn:C.red,color:'white',
+          boxShadow:'0 6px 24px rgba(0,0,0,0.2)',
+          display:'flex',alignItems:'center',gap:12,
+          fontFamily:'Inter,sans-serif',fontSize:13,fontWeight:500,
+          minWidth:260,maxWidth:480}}>
+          <span style={{fontSize:16}}>{importMsg.type==='ok'?'✓':'✕'}</span>
+          <span style={{flex:1}}>{importMsg.text}</span>
+          <button onClick={()=>setImportMsg(null)} style={{
+            background:'none',border:'none',cursor:'pointer',
+            color:'rgba(255,255,255,0.75)',fontSize:16,lineHeight:1,padding:0}}>×</button>
         </div>
       )}
     </div>
   );
 }
 
-/* ═══════════════════════════════════════════════════
-   IMPORT TOAST
-═══════════════════════════════════════════════════ */
 function ImportToast({msg,onClose}){
   useEffect(()=>{
     const t=setTimeout(onClose,4000);
@@ -4341,49 +4611,111 @@ function App(){
   const[initialTab,setInitialTab]=useState(null);
 
   /* ── Export all risks as JSON ── */
-  const exportRisks=()=>{
-    const payload={
-      exportedAt:new Date().toISOString(),
-      version:'fair_register_v4',
-      count:risks.length,
-      risks,
-    };
-    const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});
+  /* ── CSV helpers ── */
+  const csvEscape=v=>{
+    const s=String(v??'');
+    return s.includes(',')||s.includes('"')||s.includes('\n')
+      ?'"'+s.replace(/"/g,'""')+'"':s;
+  };
+  const csvRow=arr=>arr.map(csvEscape).join(',')+'\r\n';
+  const downloadCsv=(rows,filename)=>{
+    const blob=new Blob(['\uFEFF'+rows.join('')],{type:'text/csv;charset=utf-8'});
     const url=URL.createObjectURL(blob);
     const a=document.createElement('a');
     a.href=url;
-    a.download=`企業風險量化平台_${new Date().toISOString().slice(0,10)}.json`;
+    a.download=filename;
     a.click();
     URL.revokeObjectURL(url);
   };
+  const parseCsvLine=line=>{
+    const res=[];let cur='';let inQ=false;
+    for(let i=0;i<line.length;i++){
+      const c=line[i];
+      if(c==='"'&&!inQ){inQ=true;}
+      else if(c==='"'&&inQ&&line[i+1]==='"'){cur+='"';i++;}
+      else if(c==='"'&&inQ){inQ=false;}
+      else if(c===','&&!inQ){res.push(cur);cur='';}
+      else cur+=c;
+    }
+    res.push(cur);
+    return res;
+  };
 
-  /* ── Import risks from JSON ── */
+  /* ── Export risk register as CSV ── */
+  const exportRisks=()=>{
+    const RISK_COLS=['風險名稱','優先等級','狀態','所屬循環',
+      '受影響資產','威脅來源','威脅行為','損失事件','業務衝擊關切',
+      '負責人','EAL（均值）','P90'];
+    const rows=[csvRow(RISK_COLS)];
+    risks.forEach(r=>{
+      const priLabel={critical:'緊急',high:'高',medium:'中',low:'低'}[r.priority]||r.priority||'';
+      const staLabel={registered:'已登記',analyzed:'已分析',evaluated:'已評估',
+        in_treatment:'處理中',monitoring:'監控中',closed:'已結案'}[r.status]||r.status||'';
+      rows.push(csvRow([
+        r.name||'',priLabel,staLabel,r.processCycle||'',
+        r.scenario?.asset||'',r.scenario?.actor||'',
+        r.scenario?.event||'',r.scenario?.loss||'',
+        r.scenario?.concern||'',r.owner||'',
+        r.fairResult?Math.round(r.fairResult.mean):'',
+        r.fairResult?Math.round(r.fairResult.p90):'',
+      ]));
+    });
+    downloadCsv(rows,`風險登記冊_${new Date().toISOString().slice(0,10)}.csv`);
+  };
+
+  /* ── Import risk register from CSV ── */
   const importRisks=(e)=>{
     const file=e.target.files[0];
     if(!file)return;
     const reader=new FileReader();
     reader.onload=ev=>{
       try{
-        const data=JSON.parse(ev.target.result);
-        /* Accept either a direct array or our wrapped payload format */
-        const incoming=Array.isArray(data)?data:(data.risks||[]);
-        if(!incoming.length)throw new Error('未找到任何風險資料');
-        /* Merge: keep existing risks, append new ones that don't share the same id */
-        const existingIds=new Set(risks.map(r=>r.id));
-        const newItems=incoming.filter(r=>r.id&&!existingIds.has(r.id));
-        const dupes=incoming.length-newItems.length;
-        setRisks(rs=>[...rs,...newItems]);
-        setImportMsg({
-          type:'ok',
-          text:`成功匯入 ${newItems.length} 筆風險${dupes>0?`（已略過 ${dupes} 筆重複項目）`:''}`,
-        });
+        const text=ev.target.result.replace(/^\uFEFF/,'');
+        const lines=text.split(/\r?\n/).filter(l=>l.trim());
+        if(lines.length<2)throw new Error('CSV 沒有資料列');
+        const header=parseCsvLine(lines[0]);
+        const idx=k=>header.findIndex(h=>h.trim()===k);
+        const iName=idx('風險名稱'),iOwner=idx('負責人'),
+              iPri=idx('優先等級'),iCyc=idx('所屬循環'),
+              iAsset=idx('受影響資產'),iActor=idx('威脅來源'),
+              iEvent=idx('威脅行為'),iLoss=idx('損失事件'),
+              iCon=idx('業務衝擊關切');
+        if(iName<0)throw new Error('找不到「風險名稱」欄位，請確認 CSV 格式');
+        const priMap={'緊急':'critical','高':'high','中':'medium','低':'low'};
+        const existNames=new Set(risks.map(r=>r.name));
+        let added=0,dupes=0;
+        const toAdd=[];
+        for(let i=1;i<lines.length;i++){
+          const cols=parseCsvLine(lines[i]);
+          const name=cols[iName]?.trim();
+          if(!name)continue;
+          if(existNames.has(name)){dupes++;continue;}
+          toAdd.push(newRisk({
+            name,
+            owner:iOwner>=0?cols[iOwner]?.trim():'',
+            priority:iPri>=0?(priMap[cols[iPri]?.trim()]||'medium'):'medium',
+            processCycle:iCyc>=0?cols[iCyc]?.trim():'',
+            scenario:{
+              asset:iAsset>=0?cols[iAsset]?.trim():'',
+              actor:iActor>=0?cols[iActor]?.trim():'',
+              event:iEvent>=0?cols[iEvent]?.trim():'',
+              loss:iLoss>=0?cols[iLoss]?.trim():'',
+              concern:iCon>=0?cols[iCon]?.trim():'',
+              assumptions:'',
+            },
+          }));
+          existNames.add(name);
+          added++;
+        }
+        if(toAdd.length>0)setRisks(rs=>[...toAdd,...rs]);
+        setImportMsg({type:'ok',
+          text:`成功匯入 ${added} 筆風險${dupes>0?`（已略過 ${dupes} 筆同名項目）`:''}`});
       }catch(err){
         setImportMsg({type:'err',text:`匯入失敗：${err.message}`});
       }
-      /* reset file input so same file can be re-selected */
       e.target.value='';
     };
-    reader.readAsText(file);
+    reader.readAsText(file,'UTF-8');
   };
 
   useEffect(()=>{saveRisks(risks);},[risks]);
@@ -4492,31 +4824,33 @@ function App(){
           })()}
         </div>
 
-        {/* Export button */}
-        <button onClick={exportRisks} disabled={risks.length===0}
-          style={{
-            padding:'6px 14px',background:'transparent',
-            border:`1px solid ${C.bdr}`,borderRadius:3,cursor:risks.length===0?'not-allowed':'pointer',
-            fontSize:12,color:risks.length===0?C.fnt:C.sub,fontFamily:'Inter,sans-serif',
-            display:'flex',alignItems:'center',gap:5,transition:'all .12s',
-            marginLeft:6,opacity:risks.length===0?0.45:1}}
-          title="匯出所有風險資料為 JSON 檔案">
-          ↑ 匯出
-        </button>
-
-        {/* Import button (wraps hidden file input) */}
-        <label style={{
-          padding:'6px 14px',background:'transparent',
-          border:`1px solid ${C.bdr}`,borderRadius:3,cursor:'pointer',
-          fontSize:12,color:C.sub,fontFamily:'Inter,sans-serif',
-          display:'flex',alignItems:'center',gap:5,
-          transition:'all .12s',marginLeft:0}}
-          title="從 JSON 檔案匯入風險資料">
-          ↓ 匯入
-          <input type="file" accept=".json,application/json"
-            onChange={importRisks}
-            style={{display:'none'}}/>
-        </label>
+        {/* Risk register CSV buttons - only show on register view */}
+        {view==='register'&&(
+          <>
+            <button onClick={exportRisks} disabled={risks.length===0}
+              style={{
+                padding:'6px 14px',background:'transparent',
+                border:`1px solid ${C.bdr}`,borderRadius:3,
+                cursor:risks.length===0?'not-allowed':'pointer',
+                fontSize:12,color:risks.length===0?C.fnt:C.sub,fontFamily:'Inter,sans-serif',
+                display:'flex',alignItems:'center',gap:5,transition:'all .12s',
+                marginLeft:6,opacity:risks.length===0?0.45:1}}
+              title="匯出風險登記冊為 CSV">
+              ↑ 匯出 CSV
+            </button>
+            <label style={{
+              padding:'6px 14px',background:'transparent',
+              border:`1px solid ${C.bdr}`,borderRadius:3,cursor:'pointer',
+              fontSize:12,color:C.sub,fontFamily:'Inter,sans-serif',
+              display:'flex',alignItems:'center',gap:5,transition:'all .12s',marginLeft:0}}
+              title="從 CSV 匯入風險登記冊">
+              ↓ 匯入 CSV
+              <input type="file" accept=".csv,text/csv"
+                onChange={importRisks}
+                style={{display:'none'}}/>
+            </label>
+          </>
+        )}
 
         <button onClick={()=>setShowOpts(true)} style={{
           padding:'6px 14px',background:'transparent',
@@ -4550,7 +4884,10 @@ function App(){
 
         {view==='kri'&&(
           <div className="fade">
-            <KriOverview risks={risks} onOpenRisk={(id,tab)=>{openRisk(id,tab);}}/>
+            <KriOverview risks={risks}
+              onUpdateRisk={updateRisk}
+              onOpenRisk={(id,tab)=>{openRisk(id,tab);}}
+              csvHelpers={{csvEscape,csvRow,downloadCsv,parseCsvLine}}/>
           </div>
         )}
 
