@@ -4,9 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>企業風險量化平台</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@300;400;500&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -27,6 +27,12 @@ textarea{resize:vertical;font-family:inherit}
 <body>
 <div id="root"></div>
 <script type="text/babel">
+if(!window.React||!window.ReactDOM){
+  document.getElementById('root').innerHTML=
+    '<div style="font-family:sans-serif;padding:40px;color:#D43820">'+
+    '<b>載入失敗：</b>React / ReactDOM 未能從 CDN 載入，請確認網路連線後重新整理。</div>';
+  throw new Error('React / ReactDOM 載入失敗');
+}
 const{useState,useCallback,useMemo,useRef,useEffect}=React;
 
 /* ═══════════════════════════════════════════════════
@@ -933,7 +939,9 @@ function FairDiagram({nodes,setNodes}){
             {/* Header */}
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:10}}>
               <div>
-                <div style={{fontSize:12.5,fontWeight:600,color:an.clr}}>{an.zh}</div>
+                <div style={{fontSize:12.5,fontWeight:600,color:an.clr}}>
+                  {TERMS[active]?.zh||`${an.en1}${an.en2?' '+an.en2:''}`}
+                </div>
                 <div style={{fontSize:9,color:C.fnt,marginTop:1,fontFamily:'Inter,sans-serif'}}>
                   {an.en1}{an.en2?' '+an.en2:''} · {eff==='info'?'資訊參考':'可輸入'}
                 </div>
