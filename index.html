@@ -4,9 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>企業風險量化平台</title>
-<script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
-<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@300;400;500&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -486,6 +486,48 @@ function SectionLabel({children,accent}){
         textTransform:'uppercase',color:C.sub,fontFamily:'Inter,sans-serif'}}>
         {children}
       </span>
+    </div>
+  );
+}
+
+/* ── Numbered flow section divider (inspired by large-number layout) ── */
+function FlowSection({num,title,subtitle,accent,children,noPad}){
+  const ac=accent||C.txt;
+  return(
+    <div style={{marginBottom:28}}>
+      {/* Section header */}
+      <div style={{display:'flex',alignItems:'flex-start',gap:0,marginBottom:14,
+        paddingBottom:12,borderBottom:`2px solid ${C.bdr}`}}>
+        {/* Large number */}
+        <div style={{
+          fontSize:52,fontWeight:700,lineHeight:1,
+          color:'#E8E5DE',fontFamily:'Inter,sans-serif',
+          letterSpacing:'-0.04em',marginRight:14,marginTop:-6,
+          flexShrink:0,userSelect:'none',minWidth:52}}>
+          {num}
+        </div>
+        {/* Title block */}
+        <div style={{flex:1}}>
+          <div style={{display:'flex',alignItems:'center',gap:8}}>
+            <span style={{width:3,height:16,background:ac,borderRadius:2,
+              display:'inline-block',flexShrink:0,marginTop:1}}/>
+            <span style={{fontSize:15,fontWeight:600,color:C.txt,
+              fontFamily:'Inter,sans-serif',letterSpacing:'-0.01em',lineHeight:1.3}}>
+              {title}
+            </span>
+          </div>
+          {subtitle&&(
+            <div style={{fontSize:11.5,color:C.sub,fontFamily:'Inter,sans-serif',
+              marginTop:4,marginLeft:11}}>
+              {subtitle}
+            </div>
+          )}
+        </div>
+      </div>
+      {/* Content */}
+      <div style={noPad?{}:{paddingLeft:66}}>
+        {children}
+      </div>
     </div>
   );
 }
@@ -1722,7 +1764,7 @@ function TabOverview({risk,onUpdate,opts:optsIn}){
 
   return(
     <div>
-      <SectionLabel>基本資訊</SectionLabel>
+      <FlowSection num="1" title="基本資訊" subtitle="風險識別、負責人與所屬業務循環" accent={C.txt}>
         <div style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr 1fr',gap:12}}>
           <div>
             <div style={{fontSize:11,color:C.txt,fontWeight:600,marginBottom:4,fontFamily:'Inter,sans-serif'}}>風險名稱</div>
@@ -1777,8 +1819,8 @@ function TabOverview({risk,onUpdate,opts:optsIn}){
             </div>
           );
         })()}
-      </div>
-      <SectionLabel>場景定義</SectionLabel>
+      </FlowSection>
+      <FlowSection num="2" title="場景定義" subtitle="FAIR 威脅情境：資產 → 威脅來源 → 行為 → 損失" accent={C.blu}>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
           {[
             {k:'asset',label:'受影響資產',opts:opts.assets},
@@ -1801,7 +1843,8 @@ function TabOverview({risk,onUpdate,opts:optsIn}){
               placeholder="分析前提與假設說明…"/>
           </div>
         </div>
-      <div style={{gridColumn:'span 2',display:'flex',justifyContent:'flex-end',
+      </FlowSection>
+      <div style={{display:'flex',justifyContent:'flex-end',
         alignItems:'center',gap:12}}>
         {saved&&!isDirty&&(
           <span style={{fontSize:12,color:C.grn,fontFamily:'Inter,sans-serif',
@@ -1822,6 +1865,7 @@ function TabOverview({risk,onUpdate,opts:optsIn}){
           style={saved&&!isDirty?{color:C.grn,borderColor:C.grn,background:'transparent',opacity:0.8}:{}}
         />
       </div>
+    </div>
   );
 }
 
@@ -1857,6 +1901,7 @@ function TabFair({risk,onUpdate}){
   const exc =useMemo(()=>risk.fairResult?mkExc(risk.fairResult.raw):null,[risk.fairResult]);
   return(
     <div>
+      <FlowSection num="1" title="節點設定" subtitle="設定 FAIR 模型的 7 個輸入節點（最低 / 最可能 / 最高值）" accent={C.txt} noPad>
       <FairDiagram nodes={nodes} setNodes={setNodes}/>
       <div style={{margin:'12px 0',display:'flex',justifyContent:'flex-end',
         gap:10,alignItems:'center',flexWrap:'wrap'}}>
@@ -1888,6 +1933,7 @@ function TabFair({risk,onUpdate}){
           onClick={runSim} disabled={simming}
           style={{padding:'9px 24px',fontSize:13}}/>
       </div>
+      </FlowSection>
       {risk.fairResult&&(
         <div className="fade">
 
@@ -1917,7 +1963,7 @@ function TabFair({risk,onUpdate}){
           </div>
 
           {/* ── 2. KPI Cards ── */}
-          <SectionLabel>量化結果 · Quantitative Results</SectionLabel>
+          <FlowSection num="2" title="量化結果" subtitle="蒙地卡羅模擬輸出 · Quantitative Results" accent={C.red}>
           <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:10,marginBottom:6}}>
             {[
               {
@@ -2106,7 +2152,8 @@ function TabFair({risk,onUpdate}){
             </p>
           </div>
 
-        </div>
+        </FlowSection>
+      </div>
       )}
     </div>
   );
@@ -2166,7 +2213,7 @@ function TabEvaluation({risk,onUpdate}){
   return(
     <div>
       {/* A. FAIR 結果摘要 — dark */}
-      <SectionLabel>FAIR 量化結果摘要 · FAIR Analysis Summary</SectionLabel>
+      <FlowSection num="1" title="FAIR 量化結果摘要" subtitle="蒙地卡羅模擬輸出 · FAIR Analysis Summary" accent={C.red}>
       <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:8,marginBottom:16}}>
         {[
           {zh:'預期年度損失',en:'Expected Annual Loss (EAL)',val:usd(r.mean),note:'長期平均年度暴露水準',hi:true},
@@ -2189,7 +2236,8 @@ function TabEvaluation({risk,onUpdate}){
       </div>
 
       {/* B. 風險門檻比較 */}
-      <SectionLabel>風險門檻比較 · Risk Threshold Comparison</SectionLabel>
+      </FlowSection>
+      <FlowSection num="2" title="風險門檻比較" subtitle="與組織風險胃納及容忍度比較 · Risk Threshold Comparison" accent={C.amb}>
       <div style={{background:'#F6F4EF',border:`1px solid ${C.bdr}`,
         borderRadius:4,padding:'14px 16px',marginBottom:16}}>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:12,marginBottom:12}}>
@@ -2277,7 +2325,8 @@ function TabEvaluation({risk,onUpdate}){
       </div>
 
       {/* C. 決策選項 */}
-      <SectionLabel>評估決策 · Evaluation Decision</SectionLabel>
+      </FlowSection>
+      <FlowSection num="3" title="評估決策" subtitle="選擇應對方向與核准層級 · Evaluation Decision" accent={C.txt}>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:16}}>
         {decisions.map(d=>(
           <div key={d.v} onClick={()=>upd('decision',d.v)}
@@ -2316,7 +2365,8 @@ function TabEvaluation({risk,onUpdate}){
       </div>
 
       {/* D. 結構化評估理由 */}
-      <SectionLabel>評估記錄 · Evaluation Record</SectionLabel>
+      </FlowSection>
+      <FlowSection num="4" title="評估記錄" subtitle="文件化評估依據與結論 · Evaluation Record" accent={C.grn}>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:14}}>
         <div>
           <div style={{fontSize:11,color:C.txt,fontWeight:600,marginBottom:4,fontFamily:'Inter,sans-serif'}}>評估者</div>
@@ -2372,7 +2422,8 @@ function TabEvaluation({risk,onUpdate}){
             v={saved&&!isDirty?'ghost':'primary'}
             style={saved&&!isDirty?{color:C.grn,borderColor:C.grn,background:'transparent',opacity:0.8}:{}}/>
         </div>
-      </div>
+      </FlowSection>
+    </div>
   );
 }
 
@@ -2432,8 +2483,7 @@ function TabTreatment({risk,onUpdate}){
   const r=risk.fairResult;
   return(
     <div>
-      {/* A. 應對策略 — dark hero block */}
-      <SectionLabel>應對策略 · Treatment Strategy</SectionLabel>
+      <FlowSection num="1" title="應對策略" subtitle="選擇風險應對方向 · Treatment Strategy" accent={C.grn}>
       <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8,marginBottom:16}}>
         {strategies.map(s=>(
           <div key={s.v} onClick={()=>upd('strategy',s.v)}
@@ -2449,8 +2499,8 @@ function TabTreatment({risk,onUpdate}){
         ))}
       </div>
 
-      {/* B. 應對計畫 */}
-      <SectionLabel>應對計畫 · Treatment Plan</SectionLabel>
+      </FlowSection>
+      <FlowSection num="2" title="應對計畫" subtitle="控制措施、負責人與預算 · Treatment Plan" accent={C.txt}>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:14}}>
         <div style={{gridColumn:'span 2'}}>
           <div style={{fontSize:11,color:C.txt,fontWeight:600,marginBottom:4,fontFamily:'Inter,sans-serif'}}>
@@ -2487,8 +2537,8 @@ function TabTreatment({risk,onUpdate}){
         </div>
       </div>
 
-      {/* C. 執行狀態 */}
-      <SectionLabel>執行狀態 · Execution Status</SectionLabel>
+      </FlowSection>
+      <FlowSection num="3" title="執行狀態" subtitle="追蹤應對進度 · Execution Status" accent={C.amb}>
       <div style={{display:'flex',gap:8,marginBottom:16}}>
         {Object.entries(TREAT_STATUS).map(([v,s])=>(
           <div key={v} onClick={()=>upd('treatStatus',v)}
@@ -2502,8 +2552,8 @@ function TabTreatment({risk,onUpdate}){
         ))}
       </div>
 
-      {/* D. 預期殘餘風險 */}
-      <SectionLabel>預期殘餘風險 · Expected Residual Risk</SectionLabel>
+      </FlowSection>
+      <FlowSection num="4" title="預期殘餘風險" subtitle="應對後風險水準估算 · Expected Residual Risk" accent={C.blu}>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:14}}>
         {/* Current */}
         <div style={{background:'#F6F4EF',border:`1px solid ${C.bdr}`,borderRadius:4,padding:'14px 16px'}}>
@@ -2564,8 +2614,8 @@ function TabTreatment({risk,onUpdate}){
         </div>
       </div>
 
-      {/* E. 財務協作 */}
-      <SectionLabel>財務審查與協作 · Finance Review</SectionLabel>
+      </FlowSection>
+      <FlowSection num="5" title="財務審查與協作" subtitle="預算核准與保險評估 · Finance Review" accent={C.red}>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:14}}>
         <div>
           <div style={{fontSize:11,color:C.txt,fontWeight:600,marginBottom:4,fontFamily:'Inter,sans-serif'}}>財務審查人</div>
@@ -2623,7 +2673,7 @@ function TabTreatment({risk,onUpdate}){
             v={saved&&!isDirty?'ghost':'primary'}
             style={saved&&!isDirty?{color:C.grn,borderColor:C.grn,background:'transparent',opacity:0.8}:{}}/>
         </div>
-      </div>
+      </FlowSection>
     </div>
   );
 }
@@ -2726,7 +2776,7 @@ function TabMonitoring({risk,onUpdate}){
         </div>
       )}
 
-      <SectionLabel>監控設定 · Monitoring Configuration</SectionLabel>
+      <FlowSection num="1" title="監控設定" subtitle="檢查週期、負責人與觸發重評估條件 · Monitoring Configuration" accent={C.txt}>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:0}}>
         <div>
           <div style={{fontSize:11,color:C.txt,fontWeight:600,marginBottom:6,fontFamily:'Inter,sans-serif'}}>複查週期</div>
@@ -2791,10 +2841,10 @@ function TabMonitoring({risk,onUpdate}){
             placeholder="例：每月由安全團隊提交 KRI 報告；控制效能複查列入季度稽核"/>
         </div>
         </div>
-      </div>
 
       {/* ── KRI 區塊 ── */}
-      <SectionLabel>關鍵風險指標（KRI）</SectionLabel>
+      </FlowSection>
+      <FlowSection num="2" title="關鍵風險指標（KRI）" subtitle="量化監控信號 · Key Risk Indicators" accent={C.red} noPad>
       <div style={{margin:'0 -32px -30px',overflow:'hidden'}}>
         {/* KRI header */}
         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',
@@ -2989,7 +3039,7 @@ function TabMonitoring({risk,onUpdate}){
                             display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
                             <span style={{fontSize:11,color:C.txt,fontFamily:'Inter,sans-serif',fontWeight:600}}>門檻：</span>
                             <span style={{fontSize:11,color:C.grn,fontFamily:'Inter,sans-serif'}}>
-                              綠燈 &lt; {kri.yellowThreshold||'?'}
+                              綠燈 {'<'} {kri.yellowThreshold||'?'}
                             </span>
                             <span style={{color:C.bdr}}>→</span>
                             <span style={{fontSize:11,color:C.amb,fontFamily:'Inter,sans-serif'}}>
@@ -3057,7 +3107,8 @@ function TabMonitoring({risk,onUpdate}){
 
 
       {/* 風險生命週期 */}
-      <SectionLabel>風險生命週期</SectionLabel>
+      </FlowSection>
+      <FlowSection num="3" title="風險生命週期" subtitle="登記至今的狀態變更時間軸" accent={C.grn}>
       <div style={{marginBottom:16}}>
         {[
           {step:0,label:'已登記',       date:risk.createdAt},
@@ -3085,6 +3136,7 @@ function TabMonitoring({risk,onUpdate}){
           );
         })}
       </div>
+      </FlowSection>
 
       
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
@@ -3105,6 +3157,7 @@ function TabMonitoring({risk,onUpdate}){
               style={saved&&!isDirty?{color:C.grn,borderColor:C.grn,background:'transparent',opacity:0.8}:{}}/>
           </div>
         </div>
+    </div>
   );
 }
 
@@ -3224,15 +3277,8 @@ function TabPricing({risk,onUpdate}){
       </div>
       {ip.enabled&&(
         <div className="fade">
-          {/* PART 1: 整體計價設定 */}
-          <div style={{background:'#F6F4EF',border:`1px solid ${C.bdr}`,
-            borderRadius:6,padding:'16px 18px',marginBottom:16}}>
-            <div style={{fontSize:10.5,fontWeight:700,color:C.txt,letterSpacing:'0.1em',
-              textTransform:'uppercase',marginBottom:12,fontFamily:'Inter,sans-serif',
-              display:'flex',alignItems:'center',gap:8}}>
-              <span style={{width:3,height:14,background:C.txt,borderRadius:2,display:'inline-block'}}/>
-              整體計價設定 · Overall Pricing Setup
-            </div>
+          <FlowSection num="1" title="整體計價設定" subtitle="計價依據、目的與成本分攤週期 · Overall Pricing Setup" accent={C.txt}>
+            <div style={{background:'#F8F7F4',border:`1px solid ${C.bdr}`,borderRadius:6,padding:'16px 18px',marginBottom:0}}>
             {/* FAIR refs */}
             <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8,marginBottom:12}}>
               {[
@@ -3338,7 +3384,8 @@ function TabPricing({risk,onUpdate}){
             </div>
           </div>
 
-          {/* PART 2: 分攤明細 */}
+          </FlowSection>
+          <FlowSection num="2" title="多單位成本分攤" subtitle="按業務單位分攤風險成本 · Unit Allocation" accent={C.blu}>
           <div style={{background:C.surf,border:`1px solid ${C.bdr}`,
             borderRadius:6,padding:'16px 18px',marginBottom:16}}>
             <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}}>
@@ -3453,7 +3500,6 @@ function TabPricing({risk,onUpdate}){
                     </div>
                   ))}
                   <div/>
-                </div>
                 {/* Status */}
                 <div style={{marginTop:8,padding:'8px 12px',borderRadius:4,
                   background:pctOk?C.grnL:'#FFF8F0',
@@ -3476,9 +3522,9 @@ function TabPricing({risk,onUpdate}){
                 </div>
               </>
             )}
-          </div>
 
-          {/* Auto Summary */}
+          </FlowSection>
+          <FlowSection num="3" title="摘要與儲存" subtitle="分攤結果摘要與計價記錄 · Summary & Save" accent={C.grn}>
           {(curCost>0||details.length>0)&&(
             <div style={{background:C.grnL,border:`1px solid ${C.grn}35`,
               borderRadius:6,padding:'14px 18px',marginBottom:16}}>
@@ -3537,6 +3583,7 @@ function TabPricing({risk,onUpdate}){
             )}
             <Btn ch="儲存計價設定" onClick={save} v="primary"/>
           </div>
+          </FlowSection>
         </div>
       )}
     </div>
@@ -4025,7 +4072,6 @@ function TabDecision({risk}){
           URL.revokeObjectURL(url);
         }} v="primary"/>
       </div>
-    </div>
   );
 }
 
@@ -4060,61 +4106,69 @@ function RiskDetail({risk,onUpdate,onBack,opts:optsIn,initialTab}){
         </span>
       </div>
 
-      {/* Risk header */}
-      <div style={{background:C.surf,border:`1px solid ${C.bdr}`,borderRadius:4,
-        padding:'16px 20px',marginBottom:14,display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}}>
-        <div style={{flex:1,minWidth:200}}>
-          <div className="serif" style={{fontSize:20,fontWeight:400,color:C.txt,lineHeight:1.2}}>
-            {risk.name||`${risk.scenario.actor||'—'} → ${risk.scenario.asset||'—'}`}
-          </div>
-          <div style={{fontSize:11.5,color:C.sub,marginTop:4,fontFamily:'Inter,sans-serif'}}>
-            {[risk.scenario.asset,risk.scenario.event].filter(Boolean).join(' · ')}
-            {risk.owner&&` · 負責人：${risk.owner}`}
-            {` · 登記日：${fmtDate(risk.createdAt)}`}
-          </div>
-        </div>
-        <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
-          <PriBadge priority={risk.priority}/>
-          <StatusBadge status={risk.status}/>
-          {risk.fairResult&&(
-            <div style={{padding:'4px 12px',background:'#F2EFE8',borderRadius:3,
-              fontSize:12.5,fontFamily:'Inter,sans-serif',fontWeight:500,color:C.txt}}>
-              EAL {usd(risk.fairResult.mean)}
+      {/* Risk header — dark */}
+      <div style={{background:C.txt,borderRadius:'8px 8px 0 0',
+        padding:'20px 24px 0',marginBottom:0}}>
+        <div style={{display:'flex',alignItems:'flex-start',gap:12,
+          flexWrap:'wrap',marginBottom:14}}>
+          <div style={{flex:1,minWidth:200}}>
+            <div className="serif" style={{fontSize:22,fontWeight:400,color:'white',lineHeight:1.2}}>
+              {risk.name||`${risk.scenario.actor||'—'} → ${risk.scenario.asset||'—'}`}
             </div>
-          )}
+            <div style={{fontSize:11.5,color:'rgba(255,255,255,0.5)',marginTop:5,fontFamily:'Inter,sans-serif'}}>
+              {[risk.scenario.asset,risk.scenario.event].filter(Boolean).join(' · ')}
+              {risk.owner&&` · 負責人：${risk.owner}`}
+              {` · 登記日：${fmtDate(risk.createdAt)}`}
+            </div>
+          </div>
+          <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap',paddingTop:2}}>
+            <PriBadge priority={risk.priority}/>
+            <StatusBadge status={risk.status}/>
+            {risk.fairResult&&(
+              <div style={{padding:'4px 12px',background:'rgba(255,255,255,0.12)',
+                border:'1px solid rgba(255,255,255,0.2)',
+                borderRadius:3,fontSize:12.5,fontFamily:'Inter,sans-serif',
+                fontWeight:500,color:'white'}}>
+                EAL {usd(risk.fairResult.mean)}
+              </div>
+            )}
+          </div>
         </div>
-      </div>
 
-      {/* Tabs */}
-      <div style={{display:'flex',gap:0,marginBottom:16,
-        borderBottom:`2px solid ${C.bdr}`,background:C.surf,borderRadius:'4px 4px 0 0',
-        border:`1px solid ${C.bdr}`,overflow:'hidden'}}>
-        {TABS.map(t=>{
-          const act=tab===t.id;
-          return(
-            <button key={t.id} onClick={()=>setTab(t.id)} style={{
-              padding:'11px 18px',fontSize:12.5,fontWeight:act?600:400,
-              fontFamily:'Inter,sans-serif',cursor:'pointer',
-              border:'none',borderBottom:act?`2px solid ${C.txt}`:'2px solid transparent',
-              background:act?'white':'transparent',color:act?C.txt:C.sub,
-              marginBottom:act?'-1px':'0',transition:'color .12s',
-              display:'flex',alignItems:'center',gap:6}}>
+        {/* Tabs — on dark background */}
+        <div style={{display:'flex',gap:0,marginTop:0}}>
+          {TABS.map(t=>{
+            const act=tab===t.id;
+            return(
+              <button key={t.id} onClick={()=>setTab(t.id)} style={{
+                padding:'10px 18px',fontSize:12.5,fontWeight:act?600:400,
+                fontFamily:'Inter,sans-serif',cursor:'pointer',
+                border:'none',
+                borderBottom:act?'2px solid white':'2px solid transparent',
+                background:act?'rgba(255,255,255,0.1)':'transparent',
+                color:act?'white':'rgba(255,255,255,0.45)',
+                transition:'color .12s, background .12s',
+                display:'flex',alignItems:'center',gap:6,
+                borderRadius:'4px 4px 0 0'}}>
               {t.label}
               {t.badge&&(
                 <span style={{fontSize:10,
-                  background:C.bg,color:C.sub,
+                  background:'rgba(255,255,255,0.15)',color:'rgba(255,255,255,0.6)',
                   padding:'1px 6px',borderRadius:2,fontFamily:'Inter,sans-serif',
                   fontWeight:500}}>{decMap[t.badge]||t.badge}</span>
               )}
             </button>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
 
       {/* Tab content */}
       <div className="fade" key={tab}
         style={{background:C.surf,border:`1px solid ${C.bdr}`,
-          borderRadius:4,padding:'20px 20px 24px'}}>
+          borderTop:'none',borderRadius:'0 0 8px 8px',
+          padding:'28px 32px 36px',
+          boxShadow:'0 2px 8px rgba(0,0,0,0.05)'}}>
         {tab==='overview'  &&<TabOverview    risk={risk} onUpdate={onUpdate} opts={opts}/>}
         {tab==='fair'      &&<TabFair        risk={risk} onUpdate={onUpdate}/>}
         {tab==='evaluation'&&<TabEvaluation  risk={risk} onUpdate={onUpdate}/>}
@@ -4302,32 +4356,33 @@ function KriOverview({risks,onUpdateRisk,onOpenRisk,csvHelpers}){
   return(
     <div>
       {/* Page title + KRI CSV buttons */}
-      <div style={{display:'flex',justifyContent:'space-between',
-        alignItems:'flex-start',marginBottom:18}}>
+      <div style={{background:C.txt,borderRadius:8,padding:'22px 28px',
+        marginBottom:20,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
         <div>
-          <h1 className="serif" style={{fontSize:28,fontWeight:700,color:C.txt,
+          <h1 className="serif" style={{fontSize:30,fontWeight:400,color:'white',
             letterSpacing:'-0.01em',lineHeight:1.15}}>KRI 總覽</h1>
-          <p style={{fontSize:13,color:C.sub,marginTop:4,fontFamily:'Inter,sans-serif'}}>
-            跨所有風險的關鍵風險指標彙整 · 在此頁可新增、編輯、刪除 KRI
+          <p style={{fontSize:12.5,color:'rgba(255,255,255,0.5)',marginTop:5,
+            fontFamily:'Inter,sans-serif',letterSpacing:'0.02em'}}>
+            跨所有風險的關鍵風險指標彙整 · Key Risk Indicators
           </p>
         </div>
         <div style={{display:'flex',gap:8,alignItems:'center',flexShrink:0,marginLeft:16}}>
           <button onClick={exportKri} disabled={allKris.length===0}
-            style={{padding:'6px 14px',background:'transparent',
-              border:`1px solid ${C.bdr}`,borderRadius:3,cursor:'pointer',
-              fontSize:12,color:C.sub,fontFamily:'Inter,sans-serif',
-              opacity:allKris.length===0?0.4:1}}>
+            style={{padding:'6px 14px',background:'rgba(255,255,255,0.12)',
+              border:'1px solid rgba(255,255,255,0.25)',borderRadius:3,cursor:'pointer',
+              fontSize:12,color:'rgba(255,255,255,0.8)',fontFamily:'Inter,sans-serif',
+              opacity:allKris.length===0?0.35:1}}>
             ↑ 匯出 KRI CSV
           </button>
-          <label style={{padding:'6px 14px',background:'transparent',
-            border:`1px solid ${C.bdr}`,borderRadius:3,cursor:'pointer',
-            fontSize:12,color:C.sub,fontFamily:'Inter,sans-serif'}}>
+          <label style={{padding:'6px 14px',background:'rgba(255,255,255,0.12)',
+            border:'1px solid rgba(255,255,255,0.25)',borderRadius:3,cursor:'pointer',
+            fontSize:12,color:'rgba(255,255,255,0.8)',fontFamily:'Inter,sans-serif'}}>
             ↓ 匯入 KRI CSV
             <input type="file" accept=".csv,text/csv"
               onChange={importKri} style={{display:'none'}}/>
           </label>
           <button onClick={()=>{setShowAddForm(v=>!v);setAddForm({});}}
-            style={{padding:'6px 16px',background:C.txt,color:'white',
+            style={{padding:'6px 16px',background:'white',color:C.txt,
               border:'none',borderRadius:3,cursor:'pointer',
               fontSize:12.5,fontFamily:'Inter,sans-serif',fontWeight:600}}>
             + 新增 KRI
@@ -4925,15 +4980,37 @@ function App(){
       </header>
 
       {/* Page content */}
-      <div style={{maxWidth:1120,margin:'0 auto',padding:'24px 24px'}}>
+      <div style={{maxWidth:1520,margin:'0 auto',padding:'24px 40px'}}>
         {/* Page title */}
         {view==='register'&&(
-          <div style={{marginBottom:20}}>
-            <h1 className="serif" style={{fontSize:28,fontWeight:700,color:C.txt,
-              letterSpacing:'-0.01em',lineHeight:1.15}}>風險登記冊</h1>
-            <p style={{fontSize:13,color:C.sub,marginTop:4,fontFamily:'Inter,sans-serif'}}>
-              管理組織所有 FAIR 量化風險 · 點擊風險列開啟詳細分析
-            </p>
+          <div style={{background:C.txt,borderRadius:8,padding:'22px 28px',
+            marginBottom:20,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+            <div>
+              <h1 className="serif" style={{fontSize:30,fontWeight:400,color:'white',
+                letterSpacing:'-0.01em',lineHeight:1.15}}>風險登記冊</h1>
+              <p style={{fontSize:12.5,color:'rgba(255,255,255,0.5)',marginTop:5,
+                fontFamily:'Inter,sans-serif',letterSpacing:'0.02em'}}>
+                FAIR 量化風險管理平台 · Risk Register
+              </p>
+            </div>
+            <div style={{display:'flex',gap:14,alignItems:'center'}}>
+              {(()=>{const allK=risks.flatMap(r=>r.kriList||[]);const red=allK.filter(k=>k.status==='red').length;
+                return allK.length>0&&(
+                  <div style={{textAlign:'right'}}>
+                    <div style={{fontSize:22,fontWeight:700,color:red>0?'#FF8A7A':'rgba(255,255,255,0.7)',
+                      fontFamily:'Inter,sans-serif',letterSpacing:'-0.04em',lineHeight:1}}>{allK.length}</div>
+                    <div style={{fontSize:9.5,color:'rgba(255,255,255,0.4)',fontFamily:'Inter,sans-serif',
+                      textTransform:'uppercase',letterSpacing:'0.1em'}}>KRI{red>0?` · ${red} 紅燈`:''}</div>
+                  </div>
+                );
+              })()}
+              <div style={{textAlign:'right'}}>
+                <div style={{fontSize:22,fontWeight:700,color:'rgba(255,255,255,0.9)',
+                  fontFamily:'Inter,sans-serif',letterSpacing:'-0.04em',lineHeight:1}}>{risks.length}</div>
+                <div style={{fontSize:9.5,color:'rgba(255,255,255,0.4)',fontFamily:'Inter,sans-serif',
+                  textTransform:'uppercase',letterSpacing:'0.1em'}}>風險登記中</div>
+              </div>
+            </div>
           </div>
         )}
 
